@@ -23,14 +23,15 @@ object CalendarUtils {
             val dateTime = LocalDateTime.of(task.date, time)
             val startMillis = dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
+            // In CalendarUtils.kt - addTaskToCalendar()
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, getDefaultCalendarId(context))
                 put(CalendarContract.Events.TITLE, task.title)
                 put(CalendarContract.Events.DTSTART, startMillis)
-                put(CalendarContract.Events.DTEND, startMillis + 60 * 60 * 1000) // 1 hour duration
+                put(CalendarContract.Events.DTEND, startMillis + 60 * 60 * 1000)
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
-                put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}")
-                put(CalendarContract.Events.HAS_ALARM, 1) // Enable reminder
+                put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}||TYPE:TASK") // ✅ MARKER
+                put(CalendarContract.Events.HAS_ALARM, 1)
             }
 
             val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
@@ -62,13 +63,14 @@ object CalendarUtils {
             val startMillis = startDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val endMillis = endDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
+            // In CalendarUtils.kt - addEventToCalendar()
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, getDefaultCalendarId(context))
                 put(CalendarContract.Events.TITLE, event.title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.DTEND, endMillis)
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
-                put(CalendarContract.Events.DESCRIPTION, "Location: ${event.location}")
+                put(CalendarContract.Events.DESCRIPTION, "Location: ${event.location}||TYPE:EVENT") // ✅ MARKER
                 if (rrule != null) {
                     put(CalendarContract.Events.RRULE, rrule)
                 }
