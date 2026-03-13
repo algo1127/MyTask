@@ -26,6 +26,7 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -42,10 +43,34 @@ import androidx.compose.ui.unit.sp
 import com.algo1127.mytask.MyTaskApplication
 import com.algo1127.mytask.NotifAi.NotifAi
 import com.algo1127.mytask.NotifAi.model.NotificationAction
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.*
 import java.time.format.TextStyle
 import java.util.*
+
+// ==================== DESIGN TOKENS ====================
+private object Theme {
+    val BgDeep      = Color(0xFF080E1E)
+    val BgMid       = Color(0xFF0F1A2E)
+    val BgSurface   = Color(0xFF162135)
+    val Teal        = Color(0xFF4DFFD2)
+    val TealDim     = Color(0xFF1A5C4F)
+    val TealGlow    = Color(0xFF4DFFD2).copy(alpha = 0.18f)
+    val Blue        = Color(0xFF3FC3F7)
+    val BlueDim     = Color(0xFF0D3A50)
+    val Gold        = Color(0xFFFFBD2E)
+    val Purple      = Color(0xFFB57BFF)
+    val White       = Color.White
+    val White80     = Color.White.copy(alpha = 0.80f)
+    val White60     = Color.White.copy(alpha = 0.60f)
+    val White30     = Color.White.copy(alpha = 0.30f)
+    val White10     = Color.White.copy(alpha = 0.10f)
+    val White06     = Color.White.copy(alpha = 0.06f)
+    val White03     = Color.White.copy(alpha = 0.03f)
+    val CardBg      = Color(0xFF131F32)
+    val CardBorder  = Color.White.copy(alpha = 0.08f)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,124 +82,165 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
     val calendarReader = remember { CalendarReader(context) }
     val coroutineScope = rememberCoroutineScope()
 
-    var refreshTrigger by remember { mutableStateOf(0) }
-
-    // ✅ FIXED: Proper destructuring with explicit Pair
+    // ✅ FIX 1: key1 = selectedDate ensures produceState re-runs on date change
     val calendarData by produceState(
-        initialValue = Pair<List<TaskItem>, List<EventItem>>(emptyList(), emptyList())
+        initialValue = Pair<List<TaskItem>, List<EventItem>>(emptyList(), emptyList()),
+        key1 = selectedDate
     ) {
         value = calendarReader.getItemsForDate(selectedDate)
     }
-    val calendarTasks = calendarData.first
+    val calendarTasks  = calendarData.first
     val calendarEvents = calendarData.second
 
-    // ✅ Track completed tasks for progress
+    // ✅ FIX 2: Reset completedTasks when selected date changes
     val completedTasks = remember { mutableStateListOf<Long>() }
+    LaunchedEffect(selectedDate) {
+        completedTasks.clear()
+    }
 
-    var showAddTaskDialog by remember { mutableStateOf(false) }
+    var showAddTaskDialog  by remember { mutableStateOf(false) }
     var showAddEventDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // 14 days for calendar scroll
     val week = (0..13).map { today.plusDays(it.toLong()) }
     val pagerState = rememberPagerState(pageCount = { 2 })
 
     val notifAi = (LocalContext.current.applicationContext as MyTaskApplication).notifAi
 
-    // ✅ FIXED: .size is a property, not a function
-    val totalTasks = calendarTasks.size
+    val totalTasks     = calendarTasks.size
     val completedCount = completedTasks.size
-    val progress = if (totalTasks > 0) (completedCount.toFloat() / totalTasks) else 0f
+    val progress       = if (totalTasks > 0) completedCount.toFloat() / totalTasks else 0f
 
-    // FAB animation
-    val fabScale by animateFloatAsState(
-        targetValue = if (showAddTaskDialog || showAddEventDialog) 0f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-        label = "fabScale"
-    )
+    // ✅ FIX 5: FAB visibility driven by AnimatedVisibility, scale removed as the gating mechanism
+    val fabVisible = !showAddTaskDialog && !showAddEventDialog
 
     Box(
-        modifier = Modifier  // ✅ Use Modifier directly, not the parameter
+        modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0D1226),
-                        Color(0xFF122033),
-                        Color(0xFF1A2F45)
-                    ),
+                    colors = listOf(Theme.BgDeep, Theme.BgMid, Theme.BgSurface),
                     startY = 0f,
                     endY = Float.POSITIVE_INFINITY
                 )
             )
     ) {
+        // Ambient glow orbs for depth
+        Box(
+            modifier = Modifier
+                .size(320.dp)
+                .offset(x = (-60).dp, y = (-40).dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Theme.Teal.copy(alpha = 0.06f),
+                            Color.Transparent
+                        )
+                    ),
+                    CircleShape
+                )
+                .blur(80.dp)
+        )
+        Box(
+            modifier = Modifier
+                .size(260.dp)
+                .align(Alignment.BottomEnd)
+                .offset(x = 60.dp, y = 60.dp)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Theme.Blue.copy(alpha = 0.06f),
+                            Color.Transparent
+                        )
+                    ),
+                    CircleShape
+                )
+                .blur(80.dp)
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 18.dp)
+                .padding(top = 16.dp)
         ) {
             // ==================== HEADER ====================
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(animationSpec = tween(400)) + slideInVertically(animationSpec = tween(400), initialOffsetY = { -30 }),
+                enter = fadeIn(tween(400)) + slideInVertically(tween(400)) { -40 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 18.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        tonalElevation = 12.dp,
+                    // Logo pill
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(52.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.background(
+                            .height(46.dp)
+                            .wrapContentWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
                                 Brush.linearGradient(
-                                    colors = listOf(Color(0xFF64FFDA), Color(0xFF00BFA5))
+                                    colors = listOf(Theme.Teal, Color(0xFF00C9A7)),
+                                    start = Offset(0f, 0f),
+                                    end   = Offset(80f, 80f)
                                 )
                             )
+                            .padding(horizontal = 14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "logo",
-                                tint = Color(0xFF0D1226),
-                                modifier = Modifier.size(28.dp)
+                                contentDescription = null,
+                                tint = Theme.BgDeep,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "MyTask",
+                                color = Theme.BgDeep,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.5.sp
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "MyTask",
-                            color = Color(0xFF64FFDA),
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.ExtraBold
+                            text = getGreeting(),
+                            color = Theme.White60,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = getGreeting(),
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
+                            text = today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()),
+                            color = Theme.White80,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    IconButton(
-                        onClick = { showSettingsDialog = true },
+                    Box(
+                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(44.dp)
-                            .background(
-                                Color.White.copy(alpha = 0.05f),
-                                CircleShape
-                            )
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Theme.White06)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { showSettingsDialog = true }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = "Settings",
-                            tint = Color.White.copy(alpha = 0.8f),
-                            modifier = Modifier.size(24.dp)
+                            tint = Theme.White60,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -183,184 +249,231 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             // ==================== PROGRESS CARD ====================
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(animationSpec = tween(500)) + slideInHorizontally(animationSpec = tween(500), initialOffsetX = { -50 }),
+                enter = fadeIn(tween(500)) + slideInVertically(tween(500)) { 20 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Card(
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.White.copy(alpha = 0.05f)
-                    ),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(100.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(68.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                progress = progress,
-                                modifier = Modifier.size(68.dp),
-                                strokeWidth = 6.dp,
-                                color = Color(0xFF64FFDA),
-                                trackColor = Color.White.copy(alpha = 0.1f)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Theme.TealDim.copy(alpha = 0.55f),
+                                    Theme.BgSurface.copy(alpha = 0.90f)
+                                ),
+                                start = Offset(0f, 0f),
+                                end   = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
                             )
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
+                        )
+                        .padding(1.dp) // border trick
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(21.dp))
+                            .background(Theme.CardBg)
+                            .padding(18.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Circular progress
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
+                                CircularProgressIndicator(
+                                    progress = { 1f },
+                                    modifier       = Modifier.size(72.dp),
+                                    strokeWidth    = 6.dp,
+                                    color          = Theme.White10,
+                                    trackColor     = Color.Transparent
+                                )
+                                val animProgress by animateFloatAsState(
+                                    targetValue    = progress,
+                                    animationSpec  = tween(800, easing = FastOutSlowInEasing),
+                                    label          = "progressAnim"
+                                )
+                                CircularProgressIndicator(
+                                    progress = { animProgress },
+                                    modifier       = Modifier.size(72.dp),
+                                    strokeWidth    = 6.dp,
+                                    color          = Theme.Teal,
+                                    trackColor     = Color.Transparent
+                                )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "${(progress * 100).toInt()}%",
+                                        color = Theme.Teal,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "done",
+                                        color = Theme.White60,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(18.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${(progress * 100).toInt()}%",
-                                    color = Color(0xFF64FFDA),
-                                    fontSize = 16.sp,
+                                    text = "Today's Progress",
+                                    color = Theme.White,
+                                    fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold
                                 )
+                                Spacer(modifier = Modifier.height(5.dp))
                                 Text(
-                                    text = "Done",
-                                    color = Color.White.copy(alpha = 0.6f),
-                                    fontSize = 10.sp
+                                    text = if (totalTasks == 0) "No tasks scheduled"
+                                    else "$completedCount of $totalTasks tasks done",
+                                    color = Theme.White60,
+                                    fontSize = 13.sp
                                 )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                // Segmented mini-bar
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    val segments = if (totalTasks > 0) totalTasks else 5
+                                    repeat(segments) { i ->
+                                        val filled = i < completedCount
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(5.dp)
+                                                .clip(RoundedCornerShape(3.dp))
+                                                .background(
+                                                    if (filled) Theme.Teal
+                                                    else Theme.White10
+                                                )
+                                        )
+                                    }
+                                }
                             }
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = "Today's Progress",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "$completedCount of $totalTasks tasks completed",
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 13.sp
-                            )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // ==================== MINI CALENDAR ====================
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(animationSpec = tween(600)) + slideInHorizontally(animationSpec = tween(600), initialOffsetX = { 50 }),
+                enter = fadeIn(tween(600)) + slideInVertically(tween(600)) { 20 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${selectedDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${selectedDate.year}",
-                            color = Color.White,
+                            text = selectedDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault()),
+                            color = Theme.White,
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${selectedDate.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())}",
-                            color = Color(0xFF64FFDA),
-                            fontSize = 14.sp,
+                            text = "${selectedDate.year}",
+                            color = Theme.White30,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        // ✅ FIXED: Proper items syntax with key
                         items(
                             count = week.size,
-                            key = { index -> week[index].toEpochDay() }
+                            key   = { index -> week[index].toEpochDay() }
                         ) { index ->
-                            val day = week[index]
-                            val isToday = day == today
+                            val day        = week[index]
+                            val isToday    = day == today
                             val isSelected = day.toEpochDay() == selectedEpochDay
-                            val weekday = day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+                            val weekday    = day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+                                .take(2).uppercase()
                             val dayOfMonth = day.dayOfMonth
 
+                            // ✅ FIX 6: Check correct day-specific lists
+                            val dayHasTasks  = calendarTasks.any  { it.date == day }
                             val dayHasEvents = calendarEvents.any { it.date == day }
-                            val dayHasTasks = calendarTasks.any { it.date == day }
 
                             val scale by animateFloatAsState(
-                                targetValue = if (isSelected) 1.08f else 1f,
+                                targetValue  = if (isSelected) 1.06f else 1f,
                                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                                label = "calendarScale"
+                                label        = "calDay_$index"
                             )
 
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
-                                    .width(60.dp)
+                                    .width(52.dp)
                                     .scale(scale)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(
+                                        when {
+                                            isSelected -> Brush.verticalGradient(
+                                                colors = listOf(Theme.Teal, Color(0xFF00C9A7))
+                                            )
+                                            isToday    -> Brush.verticalGradient(
+                                                colors = listOf(Theme.White10, Theme.White06)
+                                            )
+                                            else       -> Brush.verticalGradient(
+                                                colors = listOf(Theme.White06, Theme.White03)
+                                            )
+                                        }
+                                    )
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
+                                        indication        = null
                                     ) { selectedEpochDay = day.toEpochDay() }
+                                    .padding(vertical = 10.dp)
                             ) {
                                 Text(
                                     text = weekday,
-                                    color = if (isSelected) Color(0xFF64FFDA) else Color.White.copy(alpha = 0.6f),
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    color = if (isSelected) Theme.BgDeep.copy(alpha = 0.7f)
+                                    else Theme.White30,
+                                    fontSize    = 10.sp,
+                                    fontWeight  = FontWeight.SemiBold,
+                                    letterSpacing = 0.3.sp
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = when {
-                                        isSelected -> Color(0xFF64FFDA)
-                                        isToday -> Color.White.copy(alpha = 0.1f)
-                                        else -> Color.White.copy(alpha = 0.05f)
-                                    },
-                                    modifier = Modifier
-                                        .height(52.dp)
-                                        .fillMaxWidth()
+                                Text(
+                                    text       = dayOfMonth.toString(),
+                                    color      = if (isSelected) Theme.BgDeep else Theme.White,
+                                    fontSize   = 19.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(5.dp))
+                                // Indicator dots
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                    modifier = Modifier.height(5.dp)
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                        modifier = Modifier.fillMaxSize()
-                                    ) {
-                                        Text(
-                                            text = dayOfMonth.toString(),
-                                            color = if (isSelected) Color(0xFF0D1226) else Color.White,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Medium
+                                    if (dayHasTasks) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) Theme.BgDeep.copy(alpha = 0.5f)
+                                                    else Theme.Gold
+                                                )
                                         )
-                                        if (dayHasEvents || dayHasTasks) {
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                                                modifier = Modifier.padding(top = 2.dp)
-                                            ) {
-                                                if (dayHasTasks) {
-                                                    Surface(
-                                                        shape = CircleShape,
-                                                        color = Color(0xFFFFC107),
-                                                        modifier = Modifier.size(4.dp)
-                                                    ) {}
-                                                }
-                                                if (dayHasEvents) {
-                                                    Surface(
-                                                        shape = CircleShape,
-                                                        color = Color(0xFF03A9F4),
-                                                        modifier = Modifier.size(4.dp)
-                                                    ) {}
-                                                }
-                                            }
-                                        }
+                                    }
+                                    if (dayHasEvents) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(4.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) Theme.BgDeep.copy(alpha = 0.5f)
+                                                    else Theme.Blue
+                                                )
+                                        )
                                     }
                                 }
                             }
@@ -374,95 +487,81 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             // ==================== TABS ====================
             AnimatedVisibility(
                 visible = true,
-                enter = fadeIn(animationSpec = tween(700)),
+                enter = fadeIn(tween(700)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                TabRow(
-                    selectedTabIndex = pagerState.currentPage,
-                    containerColor = Color.Transparent,
-                    contentColor = Color(0xFF64FFDA),
-                    indicator = { tabPositions ->
-                        TabRowDefaults.Indicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                            color = Color(0xFF64FFDA),
-                            height = 3.dp
-                        )
-                    },
-                    divider = {}
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Theme.White06)
+                        .padding(4.dp)
                 ) {
-                    Tab(
-                        selected = pagerState.currentPage == 0,
-                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(0) } },
-                        modifier = Modifier.height(48.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Schedule,
-                                contentDescription = "Reminders",
-                                tint = if (pagerState.currentPage == 0) Color(0xFF64FFDA) else Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Reminders",
-                                color = if (pagerState.currentPage == 0) Color.White else Color.White.copy(alpha = 0.6f),
-                                fontSize = 15.sp,
-                                fontWeight = if (pagerState.currentPage == 0) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                            if (calendarTasks.isNotEmpty()) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFF64FFDA),
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "${calendarTasks.size}",
-                                            color = Color(0xFF0D1226),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        listOf(
+                            Triple(0, Icons.Outlined.Schedule, "Reminders"),
+                            Triple(1, Icons.Outlined.Event,    "Events")
+                        ).forEach { (page, icon, label) ->
+                            val selected = pagerState.currentPage == page
+                            val badgeCount = if (page == 0) calendarTasks.size else calendarEvents.size
+                            val badgeColor = if (page == 0) Theme.Teal else Theme.Blue
+
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (selected)
+                                            Brush.linearGradient(
+                                                colors = if (page == 0)
+                                                    listOf(Theme.TealDim, Color(0xFF0D2E2A))
+                                                else
+                                                    listOf(Theme.BlueDim, Color(0xFF0A2330))
+                                            )
+                                        else Brush.linearGradient(
+                                            colors = listOf(Color.Transparent, Color.Transparent)
                                         )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Tab(
-                        selected = pagerState.currentPage == 1,
-                        onClick = { coroutineScope.launch { pagerState.animateScrollToPage(1) } },
-                        modifier = Modifier.height(48.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Event,
-                                contentDescription = "Events",
-                                tint = if (pagerState.currentPage == 1) Color(0xFF64FFDA) else Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Events",
-                                color = if (pagerState.currentPage == 1) Color.White else Color.White.copy(alpha = 0.6f),
-                                fontSize = 15.sp,
-                                fontWeight = if (pagerState.currentPage == 1) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                            if (calendarEvents.isNotEmpty()) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFF03A9F4),
-                                    modifier = Modifier.size(20.dp)
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication        = null
+                                    ) { coroutineScope.launch { pagerState.animateScrollToPage(page) } }
+                                    .padding(vertical = 11.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment     = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "${calendarEvents.size}",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = label,
+                                        tint       = if (selected) badgeColor else Theme.White30,
+                                        modifier   = Modifier.size(17.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(7.dp))
+                                    Text(
+                                        text       = label,
+                                        color      = if (selected) Theme.White else Theme.White30,
+                                        fontSize   = 14.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                                    )
+                                    if (badgeCount > 0) {
+                                        Spacer(modifier = Modifier.width(7.dp))
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clip(CircleShape)
+                                                .background(badgeColor)
+                                        ) {
+                                            Text(
+                                                text       = "$badgeCount",
+                                                color      = Theme.BgDeep,
+                                                fontSize   = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -475,25 +574,23 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
 
             // ==================== PAGER CONTENT ====================
             HorizontalPager(
-                state = pagerState,
+                state    = pagerState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
             ) { page ->
                 when (page) {
                     0 -> RemindersTab(
-                        tasks = calendarTasks,
-                        selectedDate = selectedDate,
-                        notifAi = notifAi,
+                        tasks          = calendarTasks,
+                        selectedDate   = selectedDate,
+                        notifAi        = notifAi,
                         completedTasks = completedTasks,
                         onTaskCompleted = { taskId ->
-                            if (!completedTasks.contains(taskId)) {
-                                completedTasks.add(taskId)
-                            }
+                            if (!completedTasks.contains(taskId)) completedTasks.add(taskId)
                         }
                     )
                     1 -> EventsTab(
-                        events = calendarEvents,
+                        events       = calendarEvents,
                         selectedDate = selectedDate
                     )
                 }
@@ -501,36 +598,46 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         }
 
         // ==================== FAB ====================
+        // ✅ FIX 5: AnimatedVisibility properly controls FAB, no redundant scale gating
         AnimatedVisibility(
-            visible = true,
-            enter = scaleIn(animationSpec = spring()) + fadeIn(animationSpec = tween(200)),
-            exit = scaleOut(animationSpec = spring()) + fadeOut(animationSpec = tween(200))
+            visible  = fabVisible,
+            enter    = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(tween(200)),
+            exit     = scaleOut(spring()) + fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
         ) {
-            FloatingActionButton(
-                onClick = {
-                    if (pagerState.currentPage == 0) {
-                        showAddTaskDialog = true
-                    } else {
-                        showAddEventDialog = true
-                    }
-                },
-                containerColor = Color(0xFF64FFDA),
-                contentColor = Color(0xFF0D1226),
+            Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(20.dp)
-                    .scale(fabScale)
+                    .size(58.dp)
                     .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(16.dp),
-                        ambientColor = Color(0xFF64FFDA).copy(alpha = 0.4f)
-                    ),
-                shape = RoundedCornerShape(16.dp)
+                        elevation    = 16.dp,
+                        shape        = RoundedCornerShape(18.dp),
+                        ambientColor = Theme.Teal.copy(alpha = 0.35f),
+                        spotColor    = Theme.Teal.copy(alpha = 0.35f)
+                    )
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(Theme.Teal, Color(0xFF00C9A7)),
+                            start  = Offset(0f, 0f),
+                            end    = Offset(80f, 80f)
+                        )
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication        = null
+                    ) {
+                        if (pagerState.currentPage == 0) showAddTaskDialog = true
+                        else showAddEventDialog = true
+                    }
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
+                    imageVector    = Icons.Default.Add,
                     contentDescription = "Add",
-                    modifier = Modifier.size(28.dp)
+                    tint           = Theme.BgDeep,
+                    modifier       = Modifier.size(28.dp)
                 )
             }
         }
@@ -539,14 +646,12 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         if (showAddTaskDialog) {
             AddTaskDialog(
                 defaultDate = selectedDate,
-                onDismiss = { showAddTaskDialog = false },
-                onAdd = { title, time, category, date ->
+                onDismiss   = { showAddTaskDialog = false },
+                onAdd       = { title, time, category, date ->
                     val task = TaskItem(title, time, category, date)
                     CalendarUtils.addTaskToCalendar(context, task)
-                    try {
-                        notifAi.onTaskCreated(task)
-                    } catch (e: Exception) {
-                        android.util.Log.e("DashboardScreen", "Error: ${e.message}", e)
+                    try { notifAi.onTaskCreated(task) } catch (e: Exception) {
+                        android.util.Log.e("DashboardScreen", "onTaskCreated error: ${e.message}", e)
                     }
                     showAddTaskDialog = false
                 }
@@ -556,13 +661,11 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         if (showAddEventDialog) {
             AddEventDialog(
                 defaultDate = selectedDate,
-                onDismiss = { showAddEventDialog = false },
-                onAdd = { eventItems, reminders ->
+                onDismiss   = { showAddEventDialog = false },
+                onAdd       = { _, reminders ->
                     reminders.forEach { task ->
-                        try {
-                            notifAi.onTaskCreated(task)
-                        } catch (e: Exception) {
-                            android.util.Log.e("DashboardScreen", "Error: ${e.message}", e)
+                        try { notifAi.onTaskCreated(task) } catch (e: Exception) {
+                            android.util.Log.e("DashboardScreen", "onTaskCreated error: ${e.message}", e)
                         }
                     }
                     showAddEventDialog = false
@@ -571,9 +674,7 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
         }
 
         if (showSettingsDialog) {
-            SettingsDialog(
-                onDismiss = { showSettingsDialog = false }
-            )
+            SettingsDialog(onDismiss = { showSettingsDialog = false })
         }
     }
 }
@@ -581,51 +682,48 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
 // ==================== REMINDERS TAB ====================
 @Composable
 private fun RemindersTab(
-    tasks: List<TaskItem>,
-    selectedDate: LocalDate,
-    notifAi: NotifAi,
-    completedTasks: MutableList<Long>,
-    onTaskCompleted: (Long) -> Unit
+    tasks           : List<TaskItem>,
+    selectedDate    : LocalDate,
+    notifAi         : NotifAi,
+    completedTasks  : MutableList<Long>,
+    onTaskCompleted : (Long) -> Unit
 ) {
     val visibleTasks = tasks.filter { it.date == selectedDate }
 
     if (visibleTasks.isEmpty()) {
         EmptyState(
-            icon = Icons.Outlined.CheckCircle,
-            title = "No Reminders",
-            subtitle = "Tap + to add a new task",
-            color = Color(0xFF64FFDA)
+            icon     = Icons.Outlined.CheckCircle,
+            title    = "All clear",
+            subtitle = "Tap + to add a reminder",
+            color    = Theme.Teal
         )
     } else {
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            // ✅ FIXED: Proper items syntax with key
             items(
                 count = visibleTasks.size,
-                key = { index -> visibleTasks[index].id }
+                key   = { index -> visibleTasks[index].id }
             ) { index ->
-                val item = visibleTasks[index]
+                val item        = visibleTasks[index]
                 val isCompleted = completedTasks.contains(item.id)
 
+                // ✅ FIX 7: Proper enter AND exit
                 AnimatedVisibility(
                     visible = true,
-                    enter = fadeIn(animationSpec = tween(400)) + slideInVertically(
-                        animationSpec = tween(400),
-                        initialOffsetY = { 30 }
-                    ),
-                    exit = fadeOut(animationSpec = tween(300)) + shrinkVertically()
+                    enter   = fadeIn(tween(300, delayMillis = index * 50)) +
+                            slideInVertically(tween(300, delayMillis = index * 50)) { 40 },
+                    exit    = fadeOut(tween(200)) + shrinkVertically(tween(200))
                 ) {
                     ReminderRow(
-                        item = item,
+                        item        = item,
                         isCompleted = isCompleted,
-                        onToggle = {
+                        onToggle    = {
                             if (!isCompleted) {
                                 onTaskCompleted(item.id)
-                                try {
-                                    notifAi.onTap(NotificationAction.COMPLETED, item.id)
-                                } catch (e: Exception) {
+                                try { notifAi.onTap(NotificationAction.COMPLETED, item.id) }
+                                catch (e: Exception) {
                                     android.util.Log.e("ReminderRow", "Error: ${e.message}", e)
                                 }
                             }
@@ -641,35 +739,34 @@ private fun RemindersTab(
 // ==================== EVENTS TAB ====================
 @Composable
 private fun EventsTab(
-    events: List<EventItem>,
-    selectedDate: LocalDate
+    events       : List<EventItem>,
+    selectedDate : LocalDate
 ) {
     val visibleEvents = events.filter { it.date == selectedDate }
 
     if (visibleEvents.isEmpty()) {
         EmptyState(
-            icon = Icons.Outlined.Event,
-            title = "No Events",
-            subtitle = "Tap + to add a new event",
-            color = Color(0xFF03A9F4)
+            icon     = Icons.Outlined.Event,
+            title    = "No events",
+            subtitle = "Tap + to add an event",
+            color    = Theme.Blue
         )
     } else {
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-            // ✅ FIXED: Proper items syntax with key
             items(
                 count = visibleEvents.size,
-                key = { index -> visibleEvents[index].id }
+                key   = { index -> visibleEvents[index].id }
             ) { index ->
                 val event = visibleEvents[index]
+                // ✅ FIX 7: Proper enter AND exit
                 AnimatedVisibility(
                     visible = true,
-                    enter = fadeIn(animationSpec = tween(400)) + slideInVertically(
-                        animationSpec = tween(400),
-                        initialOffsetY = { 30 }
-                    )
+                    enter   = fadeIn(tween(300, delayMillis = index * 50)) +
+                            slideInVertically(tween(300, delayMillis = index * 50)) { 40 },
+                    exit    = fadeOut(tween(200)) + shrinkVertically(tween(200))
                 ) {
                     EventRow(event = event)
                 }
@@ -680,115 +777,156 @@ private fun EventsTab(
 }
 
 // ==================== REMINDER ROW ====================
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderRow(
-    item: TaskItem,
-    isCompleted: Boolean,
-    onToggle: () -> Unit
+    item        : TaskItem,
+    isCompleted : Boolean,
+    onToggle    : () -> Unit
 ) {
+    // ✅ FIX 4: isTapped resets via LaunchedEffect so animation can retrigger
     var isTapped by remember { mutableStateOf(false) }
+    LaunchedEffect(isTapped) {
+        if (isTapped) {
+            delay(150)
+            isTapped = false
+        }
+    }
 
     val scale by animateFloatAsState(
-        targetValue = if (isTapped) 0.96f else 1f,
+        targetValue   = if (isTapped) 0.96f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "scale"
+        label         = "reminderScale"
     )
 
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isCompleted)
-                Color(0xFF64FFDA).copy(alpha = 0.1f)
-            else
-                Color.White.copy(alpha = 0.05f)
-        ),
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .scale(scale)
+            .clip(RoundedCornerShape(18.dp))
+            .background(
+                if (isCompleted)
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Theme.Teal.copy(alpha = 0.12f),
+                            Theme.TealDim.copy(alpha = 0.08f)
+                        )
+                    )
+                else Brush.linearGradient(
+                    colors = listOf(Theme.CardBg, Theme.CardBg)
+                )
+            )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null
+                indication        = null
             ) {
                 isTapped = true
                 onToggle()
-            },
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            }
     ) {
-        Row(
+        // Left accent bar
+        Box(
             modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
+                .background(
+                    if (isCompleted) Theme.Teal
+                    else item.category.color.copy(alpha = 0.8f)
+                )
+                .align(Alignment.CenterStart)
+        )
+        Row(
+            modifier           = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment  = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = if (isCompleted)
-                    Color(0xFF64FFDA)
-                else
-                    item.category.color.copy(alpha = 0.15f),
-                modifier = Modifier.size(50.dp)
+            // Icon bubble
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(
+                        if (isCompleted)
+                            Theme.Teal.copy(alpha = 0.2f)
+                        else
+                            item.category.color.copy(alpha = 0.12f)
+                    )
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    AnimatedContent(
-                        targetState = isCompleted,
-                        transitionSpec = {
-                            scaleIn(animationSpec = tween(200)) togetherWith
-                                    scaleOut(animationSpec = tween(200))
-                        }
-                    ) { completed ->
-                        Icon(
-                            imageVector = if (completed)
-                                Icons.Default.CheckCircle
-                            else
-                                item.category.icon,
-                            contentDescription = null,
-                            tint = if (completed)
-                                Color(0xFF0D1226)
-                            else
-                                item.category.color,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
+                AnimatedContent(
+                    targetState  = isCompleted,
+                    transitionSpec = {
+                        scaleIn(tween(200))  togetherWith scaleOut(tween(200))
+                    },
+                    label = "iconTransition"
+                ) { completed ->
+                    Icon(
+                        imageVector = if (completed) Icons.Default.CheckCircle
+                        else item.category.icon,
+                        contentDescription = null,
+                        tint       = if (completed) Theme.Teal else item.category.color,
+                        modifier   = Modifier.size(24.dp)
+                    )
                 }
             }
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = item.title,
-                    color = if (isCompleted)
-                        Color.White.copy(alpha = 0.6f)
-                    else
-                        Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    text           = item.title,
+                    color          = if (isCompleted) Theme.White30 else Theme.White,
+                    fontSize       = 15.sp,
+                    fontWeight     = FontWeight.SemiBold,
                     textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines       = 2,
+                    overflow       = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = item.category.color.copy(alpha = 0.2f),
-                        modifier = Modifier.wrapContentSize()
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(item.category.color.copy(alpha = 0.15f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = item.category.label,
-                            color = item.category.color,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            text       = item.category.label,
+                            color      = item.category.color,
+                            fontSize   = 11.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint       = Theme.White30,
+                        modifier   = Modifier.size(12.dp)
+                    )
                     Text(
-                        text = item.time,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 13.sp,
+                        text       = item.time,
+                        color      = Theme.White60,
+                        fontSize   = 12.sp,
                         fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            if (isCompleted) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Theme.Teal)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint     = Theme.BgDeep,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -799,78 +937,84 @@ private fun ReminderRow(
 // ==================== EVENT ROW ====================
 @Composable
 private fun EventRow(event: EventItem) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White.copy(alpha = 0.05f)
-        ),
+    Box(
         modifier = Modifier
-            .fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Theme.CardBg)
     ) {
-        Row(
+        // Left accent bar
+        Box(
             modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
+                .background(Theme.Blue.copy(alpha = 0.8f))
+                .align(Alignment.CenterStart)
+        )
+        Row(
+            modifier          = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF03A9F4).copy(alpha = 0.15f),
-                modifier = Modifier.size(50.dp)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(Theme.Blue.copy(alpha = 0.12f))
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Event,
-                        contentDescription = null,
-                        tint = Color(0xFF03A9F4),
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Event,
+                    contentDescription = null,
+                    tint     = Theme.Blue,
+                    modifier = Modifier.size(24.dp)
+                )
             }
-            Spacer(modifier = Modifier.width(14.dp))
+            Spacer(modifier = Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = event.title,
-                    color = Color.White,
-                    fontSize = 16.sp,
+                    text       = event.title,
+                    color      = Theme.White,
+                    fontSize   = 15.sp,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines   = 2,
+                    overflow   = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment     = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Schedule,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.6f),
-                        modifier = Modifier.size(14.dp)
+                        tint     = Theme.White30,
+                        modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        text = "${event.startTime} - ${event.endTime}",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 13.sp
+                        text  = "${event.startTime} – ${event.endTime}",
+                        color = Theme.White60,
+                        fontSize = 12.sp
                     )
                 }
                 if (event.location.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment     = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.LocationOn,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(14.dp)
+                            tint     = Theme.Blue.copy(alpha = 0.7f),
+                            modifier = Modifier.size(12.dp)
                         )
                         Text(
-                            text = event.location,
-                            color = Color.White.copy(alpha = 0.6f),
-                            fontSize = 13.sp,
+                            text     = event.location,
+                            color    = Theme.White60,
+                            fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -884,43 +1028,43 @@ private fun EventRow(event: EventItem) {
 // ==================== EMPTY STATE ====================
 @Composable
 private fun EmptyState(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    color: Color
+    icon     : ImageVector,
+    title    : String,
+    subtitle : String,
+    color    : Color
 ) {
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        horizontalAlignment   = Alignment.CenterHorizontally,
+        verticalArrangement   = Arrangement.Center,
         modifier = Modifier
             .fillMaxSize()
             .padding(32.dp)
     ) {
-        Surface(
-            shape = CircleShape,
-            color = color.copy(alpha = 0.1f),
-            modifier = Modifier.size(80.dp)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.08f))
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint     = color.copy(alpha = 0.7f),
+                modifier = Modifier.size(40.dp)
+            )
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         Text(
-            text = title,
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold
+            text       = title,
+            color      = Theme.White80,
+            fontSize   = 18.sp,
+            fontWeight = FontWeight.Bold
         )
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(7.dp))
         Text(
-            text = subtitle,
-            color = Color.White.copy(alpha = 0.6f),
+            text  = subtitle,
+            color = Theme.White30,
             fontSize = 14.sp
         )
     }
@@ -931,66 +1075,92 @@ private fun EmptyState(
 private fun SettingsDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Settings", color = Color.White) },
+        title = {
+            Text("Settings", color = Theme.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        },
         text = {
-            Column {
-                Text("AI Settings", color = Color(0xFF64FFDA), fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("• noRoast: Disable roasts", color = Color.White.copy(alpha = 0.8f))
-                Text("• soulless: Plain notifications", color = Color.White.copy(alpha = 0.8f))
-                Text("• moodcast: Dynamic moods", color = Color.White.copy(alpha = 0.8f))
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Coming soon! 🔜", color = Color.White.copy(alpha = 0.6f))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text       = "AI Personality",
+                    color      = Theme.Teal,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize   = 13.sp,
+                    letterSpacing = 0.8.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                listOf(
+                    "noRoast"   to "Disable roasts",
+                    "soulless"  to "Plain notifications",
+                    "moodcast"  to "Dynamic moods"
+                ).forEach { (flag, desc) ->
+                    Row(
+                        modifier              = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Theme.Teal.copy(alpha = 0.5f))
+                        )
+                        Column {
+                            Text(flag,  color = Theme.White80,  fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(desc,  color = Theme.White30,  fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("More settings coming soon 🔜", color = Theme.White30, fontSize = 12.sp)
             }
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Got it", color = Color(0xFF64FFDA))
+                Text("Got it", color = Theme.Teal, fontWeight = FontWeight.SemiBold)
             }
         },
-        containerColor = Color(0xFF122033)
+        containerColor = Theme.BgSurface,
+        shape           = RoundedCornerShape(22.dp)
     )
 }
 
-// ==================== HELPER FUNCTIONS ====================
+// ==================== HELPERS ====================
 private fun getGreeting(): String {
     val hour = LocalTime.now().hour
     return when {
-        hour in 5..11 -> "Good morning"
+        hour in 5..11  -> "Good morning ☀️"
         hour in 12..16 -> "Good afternoon"
-        hour in 17..20 -> "Good evening"
-        else -> "Good night"
+        hour in 17..20 -> "Good evening 🌆"
+        else           -> "Good night 🌙"
     }
 }
 
 // ==================== DATA CLASSES ====================
-// In Dashboard.kt - Update data classes
-
 data class TaskItem(
-    val title: String,
-    val time: String,
-    val category: TaskCategory,
-    val date: LocalDate,
-    val id: Long = System.nanoTime(),  // ✅ More unique than currentTimeMillis()
-    val done: Boolean = false
+    val title    : String,
+    val time     : String,
+    val category : TaskCategory,
+    val date     : LocalDate,
+    val id       : Long    = System.nanoTime(),
+    val done     : Boolean = false
 )
 
 data class EventItem(
-    val title: String,
-    val startTime: String,
-    val endTime: String,
-    val location: String,
-    val date: LocalDate,
-    val id: Long = System.nanoTime()  // ✅ More unique
+    val title     : String,
+    val startTime : String,
+    val endTime   : String,
+    val location  : String,
+    val date      : LocalDate,
+    val id        : Long = System.nanoTime()
 )
 
 enum class TaskCategory(
-    val icon: ImageVector,
-    val color: Color,
-    val label: String
+    val icon  : ImageVector,
+    val color : Color,
+    val label : String
 ) {
-    Design(Icons.Default.Brush, Color(0xFFFFC107), "Design"),
-    Study(Icons.Default.School, Color(0xFF64FFDA), "Study"),
-    Personal(Icons.Default.Favorite, Color(0xFF9C27B0), "Personal"),
-    Work(Icons.Default.Business, Color(0xFF03A9F4), "Work")
+    Design  (Icons.Default.Brush,    Color(0xFFFFBD2E), "Design"),
+    Study   (Icons.Default.School,   Color(0xFF4DFFD2), "Study"),
+    Personal(Icons.Default.Favorite, Color(0xFFB57BFF), "Personal"),
+    Work    (Icons.Default.Business, Color(0xFF3FC3F7), "Work")
 }
