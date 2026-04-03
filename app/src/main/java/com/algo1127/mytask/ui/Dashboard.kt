@@ -1,5 +1,7 @@
 package com.algo1127.mytask.ui
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import com.algo1127.mytask.ui.AddEventDialog
 import com.algo1127.mytask.ui.AddTaskDialog
 
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +75,7 @@ private object Theme {
     val CardBorder  = Color.White.copy(alpha = 0.08f)
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(modifier: Modifier = Modifier) {

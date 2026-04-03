@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation("com.google.code.gson:gson:2.10.1")
     implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
+    implementation(libs.androidx.material3)
 
     // Tests
     testImplementation(libs.junit)
@@ -77,4 +78,9 @@ dependencies {
     // Debug
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // ✅ REQUIRED FOR JAVA 8 TIME TYPES ON OLDER ANDROID
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }

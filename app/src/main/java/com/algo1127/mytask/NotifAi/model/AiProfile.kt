@@ -1,4 +1,3 @@
-
 package com.algo1127.mytask.NotifAi.model
 
 import java.time.LocalDateTime
@@ -11,7 +10,12 @@ data class AiProfile(
         "soulless" to false,
         "moodcast" to false
     )
-)
+) {
+    // ✅ ADD THIS COMPANION OBJECT
+    companion object {
+        fun default() = AiProfile() // Uses primary constructor defaults
+    }
+}
 
 data class TaskPattern(
     val taskId: Long,
