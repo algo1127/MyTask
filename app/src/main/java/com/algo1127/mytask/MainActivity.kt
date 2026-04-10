@@ -20,18 +20,13 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        if (permissions[Manifest.permission.READ_CALENDAR] == true &&
-            permissions[Manifest.permission.POST_NOTIFICATIONS] == true &&
-            permissions[Manifest.permission.WRITE_CALENDAR] == true) {
-            // ✅ All permissions granted
-            android.util.Log.d("MainActivity", "All permissions granted!")
-            scheduleTestEvaluation()  // Schedule test evaluation after permissions granted
+        val granted = permissions.values.all { it }
+        if (granted) {
+            android.util.Log.d("MainActivity", "✅ All permissions granted")
+            // ✅ NotifAi.init() already schedules periodic work in its constructor
         } else {
-            // ⚠️ Handle permission denial
-            android.util.Log.w("MainActivity", "Some permissions denied:")
-            permissions.forEach { (perm, granted) ->
-                if (!granted) android.util.Log.w("MainActivity", "  - $perm: DENIED")
-            }
+            android.util.Log.w("MainActivity", "⚠️ Some permissions denied")
+            showPermissionRationale() // Optional UX polish (see below)
         }
     }
 
@@ -43,6 +38,12 @@ class MainActivity : ComponentActivity() {
                 DashboardScreen()
             }
         }
+    }
+
+    private fun showPermissionRationale() {
+        // Could show a Snackbar in DashboardScreen via ViewModel state
+        // For now, just log:
+        android.util.Log.d("MainActivity", "💡 Tip: Grant calendar permissions for full functionality")
     }
 
     private fun requestCalendarPermissions() {

@@ -114,16 +114,18 @@ object CalendarUtils {
         return 1L // Default to 1 if no calendar found
     }
 
-    fun generateRRule(frequency: Frequency, untilDate: LocalDate, selectedDays: Set<DayOfWeek>? = null): String {
+    fun generateRRule(frequency: String, untilDate: LocalDate, selectedDays: Set<DayOfWeek>? = null): String {
         val until = untilDate.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'235959'Z'"))
         return when (frequency) {
-            Frequency.Daily -> "FREQ=DAILY;UNTIL=$until"
-            Frequency.Weekly -> {
-                val days = selectedDays?.map { it.getDisplayName(TextStyle.SHORT, Locale.getDefault()).uppercase() }
-                    ?.joinToString(",") ?: ""
+            "Daily" -> "FREQ=DAILY;UNTIL=$until"
+            "Weekly" -> {
+                val days = selectedDays?.map {
+                    it.getDisplayName(TextStyle.SHORT, Locale.getDefault()).uppercase()
+                }?.joinToString(",") ?: ""
                 "FREQ=WEEKLY;UNTIL=$until;BYDAY=$days"
             }
-            Frequency.Monthly -> "FREQ=MONTHLY;UNTIL=$until;BYMONTHDAY=${untilDate.dayOfMonth}"
+            "Monthly" -> "FREQ=MONTHLY;UNTIL=$until;BYMONTHDAY=${untilDate.dayOfMonth}"
+            else -> ""
         }
     }
 }

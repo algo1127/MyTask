@@ -11,7 +11,6 @@ class Receiver : BroadcastReceiver() {
         val taskId = intent.getLongExtra("taskId", -1)
         val actionString = intent.getStringExtra("action")
 
-        // ✅ Debug logging
         android.util.Log.d("Receiver", "=================================")
         android.util.Log.d("Receiver", "Notification button tapped!")
         android.util.Log.d("Receiver", "Task ID: $taskId")
@@ -32,8 +31,8 @@ class Receiver : BroadcastReceiver() {
         try {
             val action = NotificationAction.valueOf(actionString.uppercase())
             val notifAi = (context.applicationContext as MyTaskApplication).notifAi
-            notifAi.onTap(action, taskId)
-            android.util.Log.d("Receiver", "✅ onTap called successfully for $action")
+            notifAi.onTaskAction(taskId, action)  // ✅ FIXED: Correct method name
+            android.util.Log.d("Receiver", "✅ onTaskAction called successfully for $action")
         } catch (e: Exception) {
             android.util.Log.e("Receiver", "❌ Error processing action: ${e.message}", e)
         }

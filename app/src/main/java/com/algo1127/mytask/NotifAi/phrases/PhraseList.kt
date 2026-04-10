@@ -2,6 +2,8 @@ package com.algo1127.mytask.NotifAi
 
 import com.algo1127.mytask.ui.TaskItem
 import com.algo1127.mytask.ui.TaskCategory
+import com.algo1127.mytask.ui.models.Task
+
 import java.time.LocalTime
 
 class PhraseList {
@@ -165,7 +167,10 @@ class PhraseList {
     }
 
     // ==================== MAIN PHRASE PICKER ====================
-    fun pickPhrase(item: TaskItem, scale: Int, mood: Mood, forgetCount: Int = 0): String {
+    fun pickPhrase(task: com.algo1127.mytask.ui.models.Task, intensity: Float, mood: Mood, forgetCount: Int = 0): String {
+        // Map intensity (0.0-1.0) to phrase scale (1-10)
+        val scale = (intensity * 10).toInt().coerceIn(1, 10)
+
         // Get base phrases by scale
         val basePhrases = when {
             scale <= 3 -> nudgePhrases
@@ -175,14 +180,14 @@ class PhraseList {
         }
 
         // Add category-specific phrase occasionally (20% chance)
-        val categoryPhrase = getCategoryPhrase(item.category)
+        val categoryPhrase = getCategoryPhrase(task.category)
         val useCategory = categoryPhrase != null && (1..100).random() <= 20
 
         // Pick the phrase
         var phrase = if (useCategory && scale <= 6) {
-            categoryPhrase!!.replace("{title}", item.title)
+            categoryPhrase!!.replace("{title}", task.title)
         } else {
-            basePhrases.random().replace("{title}", item.title)
+            basePhrases.random().replace("{title}", task.title)
         }
 
         // Add time prefix for low scales (friendly)
@@ -190,7 +195,7 @@ class PhraseList {
             phrase = getTimeBasedPrefix() + phrase.lowercase()
         }
 
-        // Add forget count modifier (more forgets = more intense)
+        // Add forget count modifier
         if (forgetCount >= 3) {
             phrase = "⚠️ (${forgetCount}x ignored) " + phrase
         }
@@ -207,6 +212,7 @@ class PhraseList {
         return phrase
     }
 
+
     // ==================== CATEGORY PHRASE HELPER ====================
     private fun getCategoryPhrase(category: TaskCategory): String? {
         return when (category) {
@@ -218,7 +224,7 @@ class PhraseList {
     }
 
     // ==================== COMPLETION PHRASE ====================
-    fun getCompletionPhrase(item: TaskItem): String {
+    fun getCompletionPhrase(item: Task): String {
         return praisePhrases.random().replace("{title}", item.title)
     }
 

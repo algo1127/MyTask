@@ -29,11 +29,12 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -67,6 +68,8 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.datastore.core)
+    implementation(libs.room.ktx)
 
     // Tests
     testImplementation(libs.junit)
@@ -82,5 +85,10 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
 
     // ✅ REQUIRED FOR JAVA 8 TIME TYPES ON OLDER ANDROID
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // ✅ Required for Java 8 time types on older Android
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
