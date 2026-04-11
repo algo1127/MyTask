@@ -49,5 +49,90 @@ fun EventsTab(events: List<EventItem>, selectedDate: LocalDate) {
 
 @Composable
 private fun EventRow(event: EventItem) {
-    // ... your existing EventRow code
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Theme.CardBg)
+    ) {
+        // Left accent bar
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight()
+                .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
+                .background(Theme.Blue.copy(alpha = 0.8f))
+                .align(Alignment.CenterStart)
+        )
+        Row(
+            modifier          = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(RoundedCornerShape(13.dp))
+                    .background(Theme.Blue.copy(alpha = 0.12f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Event,
+                    contentDescription = null,
+                    tint     = Theme.Blue,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(13.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text       = event.title,
+                    color      = Theme.White,
+                    fontSize   = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines   = 2,
+                    overflow   = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(5.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment     = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint     = Theme.White30,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Text(
+                        text  = "${event.startTime} – ${event.endTime}",
+                        color = Theme.White60,
+                        fontSize = 12.sp
+                    )
+                }
+                if (event.location.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment     = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocationOn,
+                            contentDescription = null,
+                            tint     = Theme.Blue.copy(alpha = 0.7f),
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text     = event.location,
+                            color    = Theme.White60,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

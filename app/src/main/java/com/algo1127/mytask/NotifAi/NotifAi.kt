@@ -61,7 +61,7 @@ class NotifAi(private val context: Context) {
 
                 // Build notification
                 val builder = NotificationCompat.Builder(context, channelId)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setSmallIcon(android.R.drawable.ic_dialog_alert)
                     .setContentTitle("MyTask AI")
                     .setContentText(text)
                     .setPriority(if (intensity >= 0.7) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)

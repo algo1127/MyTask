@@ -38,7 +38,8 @@ fun RemindersTab(
     completedTasks: MutableList<Long>,
     onTaskCompleted: (Long) -> Unit
 ) {
-    val visibleTasks = tasks.filter { it.date == selectedDate }
+    // ✅ Only show items that were created from the Reminders tab
+    val visibleTasks = tasks.filter { it.date == selectedDate && it.isReminder }
 
     if (visibleTasks.isEmpty()) {
         EmptyState(
@@ -58,11 +59,7 @@ fun RemindersTab(
                     item = item,
                     isCompleted = isCompleted,
                     onToggle = {
-                        if (!isCompleted) {
-                            onTaskCompleted(item.id)
-                            // ✅ TEMPORARILY DISABLED - will fix time picker conflict later
-                            // notifAi.onTap(NotificationAction.COMPLETED, item.id)
-                        }
+                        if (!isCompleted) onTaskCompleted(item.id)
                     }
                 )
             }
@@ -78,13 +75,7 @@ private fun ReminderRow(
     onToggle: () -> Unit
 ) {
     var isTapped by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isTapped) {
-        if (isTapped) {
-            delay(150)
-            isTapped = false
-        }
-    }
+    LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
 
     val scale by animateFloatAsState(
         targetValue = if (isTapped) 0.96f else 1f,
@@ -93,10 +84,7 @@ private fun ReminderRow(
     )
 
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .scale(scale)
-            .clip(RoundedCornerShape(18.dp)),
+        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent
     ) {
@@ -105,126 +93,58 @@ private fun ReminderRow(
                 .fillMaxWidth()
                 .background(
                     if (isCompleted)
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Theme.Teal.copy(alpha = 0.12f),
-                                Theme.TealDim.copy(alpha = 0.08f)
-                            )
-                        )
-                    else Brush.linearGradient(
-                        colors = listOf(Theme.CardBg, Theme.CardBg)
-                    )
+                        Brush.linearGradient(colors = listOf(Theme.Teal.copy(alpha = 0.12f), Theme.TealDim.copy(alpha = 0.08f)))
+                    else
+                        Brush.linearGradient(colors = listOf(Theme.CardBg, Theme.CardBg))
                 )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        isTapped = true
-                        onToggle()
-                    }
-                )
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                    isTapped = true; onToggle()
+                }
         ) {
-            // Left accent bar
             Box(
                 modifier = Modifier
-                    .width(3.dp)
-                    .fillMaxHeight()
+                    .width(3.dp).fillMaxHeight()
                     .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
-                    .background(
-                        if (isCompleted) Theme.Teal
-                        else item.category.color.copy(alpha = 0.8f)
-                    )
+                    .background(if (isCompleted) Theme.Teal else item.category.color.copy(alpha = 0.8f))
                     .align(Alignment.CenterStart)
             )
-
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Icon bubble
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(13.dp))
-                        .background(
-                            if (isCompleted)
-                                Theme.Teal.copy(alpha = 0.2f)
-                            else
-                                item.category.color.copy(alpha = 0.12f)
-                        )
+                    modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp))
+                        .background(if (isCompleted) Theme.Teal.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
                 ) {
                     Icon(
-                        imageVector = if (isCompleted) Icons.Default.CheckCircle
-                        else item.category.icon,
+                        imageVector = if (isCompleted) Icons.Default.CheckCircle else item.category.icon,
                         contentDescription = null,
                         tint = if (isCompleted) Theme.Teal else item.category.color,
                         modifier = Modifier.size(24.dp)
                     )
                 }
-
                 Spacer(modifier = Modifier.width(13.dp))
-
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.title,
-                        color = if (isCompleted) Theme.White30 else Theme.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = item.title, color = if (isCompleted) Theme.White30 else Theme.White,
+                        fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
                         textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(5.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(item.category.color.copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = item.category.label,
-                                color = item.category.color,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(item.category.color.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                            Text(item.category.label, color = item.category.color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
-                        Icon(
-                            imageVector = Icons.Default.Schedule,
-                            contentDescription = null,
-                            tint = Theme.White30,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = item.time,
-                            color = Theme.White60,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Icon(Icons.Default.Schedule, null, tint = Theme.White30, modifier = Modifier.size(12.dp))
+                        Text(item.time, color = Theme.White60, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-
                 if (isCompleted) {
                     Spacer(modifier = Modifier.width(10.dp))
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(Theme.Teal)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = Theme.BgDeep,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).clip(CircleShape).background(Theme.Teal)) {
+                        Icon(Icons.Default.Check, null, tint = Theme.BgDeep, modifier = Modifier.size(16.dp))
                     }
                 }
             }

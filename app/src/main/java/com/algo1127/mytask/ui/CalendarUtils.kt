@@ -24,13 +24,18 @@ object CalendarUtils {
             val startMillis = dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
             // In CalendarUtils.kt - addTaskToCalendar()
+            // In CalendarUtils.kt - addTaskToCalendar()
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, getDefaultCalendarId(context))
                 put(CalendarContract.Events.TITLE, task.title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.DTEND, startMillis + 60 * 60 * 1000)
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
-                put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}||TYPE:TASK") // ✅ MARKER
+
+                // ✅ FIX: Use REMINDER or TASK based on isReminder flag
+                val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
+                put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}||TYPE:$typeMarker")
+
                 put(CalendarContract.Events.HAS_ALARM, 1)
             }
 

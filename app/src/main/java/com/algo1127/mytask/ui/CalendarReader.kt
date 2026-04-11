@@ -52,30 +52,40 @@ class CalendarReader(private val context: Context) {
                     cursor.getColumnIndexOrThrow(CalendarContract.Events._ID)
                 )
 
-                // ✅ Skip if we've seen this calendar ID
                 if (seenIds.contains(calendarId)) continue
                 seenIds.add(calendarId)
 
-                val title = cursor.getString(
-                    cursor.getColumnIndexOrThrow(CalendarContract.Events.TITLE)
-                )
-                val startTime = getTimestampTime(
-                    cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
-                )
-                val endTime = getTimestampTime(
-                    cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
-                )
+                val title = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.TITLE))
+                val startTime = getTimestampTime(cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)))
+                val endTime = getTimestampTime(cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTEND)))
                 val locationIndex = cursor.getColumnIndex(CalendarContract.Events.EVENT_LOCATION)
                 val location = if (locationIndex >= 0) cursor.getString(locationIndex) ?: "" else ""
                 val descriptionIndex = cursor.getColumnIndex(CalendarContract.Events.DESCRIPTION)
                 val description = if (descriptionIndex >= 0) cursor.getString(descriptionIndex) ?: "" else ""
 
-                // ✅ Check marker to determine type
-                if (description.contains("TYPE:TASK")) {
+                // ✅ FIX: Parse both type markers
+                val isTask = description.contains("TYPE:TASK")
+                val isReminder = description.contains("TYPE:REMINDER")
+
+                if (isTask || isReminder) {
                     val category = extractCategory(description)
-                    tasks.add(TaskItem(title, startTime, category, date, id = idGenerator.getAndIncrement()))
+
+                    // ✅ FIX: Pass isReminder explicitly
+                    tasks.add(
+                        TaskItem(
+                            title = title,
+                            time = startTime,
+                            category = category,
+                            date = date,
+                            isReminder = isReminder,  // ← This was missing!
+                            id = idGenerator.getAndIncrement()
+                        )
+                    )
                 } else {
-                    events.add(EventItem(title, startTime, endTime, location, date, id = idGenerator.getAndIncrement()))
+                    // True calendar events (not created by MyTask)
+                    events.add(
+                        EventItem(title, startTime, endTime, location, date, id = idGenerator.getAndIncrement())
+                    )
                 }
             }
         }
