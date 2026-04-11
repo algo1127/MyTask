@@ -266,13 +266,15 @@ private fun CategorySelector(
     }
 }
 
+
 @Composable
 private fun DateSelector(
     selectedDate: LocalDate,
     onDateSelected: (LocalDate) -> Unit,
     accentColor: androidx.compose.ui.graphics.Color
 ) {
-    var showPicker by remember { mutableStateOf(false) }
+    var showQuickPicker by remember { mutableStateOf(false) }
+    var showManualPicker by remember { mutableStateOf(false) }  // ← ADD THIS
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -280,7 +282,7 @@ private fun DateSelector(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(Theme.White06)
-            .clickable { showPicker = true }
+            .clickable { showQuickPicker = true }
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Icon(Icons.Default.CalendarToday, null, tint = Theme.White60, modifier = Modifier.size(18.dp))
@@ -298,9 +300,10 @@ private fun DateSelector(
         Icon(Icons.Default.ArrowDropDown, null, tint = Theme.White30, modifier = Modifier.size(18.dp))
     }
 
-    if (showPicker) {
+    // Quick picker dialog
+    if (showQuickPicker) {
         AlertDialog(
-            onDismissRequest = { showPicker = false },
+            onDismissRequest = { showQuickPicker = false },
             title = { Text("Select Date", color = Theme.White) },
             text = {
                 Column {
@@ -312,7 +315,7 @@ private fun DateSelector(
                             Surface(
                                 onClick = {
                                     onDateSelected(date)
-                                    showPicker = false
+                                    showQuickPicker = false
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (date == selectedDate) accentColor.copy(alpha = 0.2f) else Theme.White06
@@ -332,17 +335,89 @@ private fun DateSelector(
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Or pick manually (v2)", color = Theme.White30, fontSize = 12.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+
+                    // ✅ MAKE THIS CLICKABLE:
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                showQuickPicker = false
+                                showManualPicker = true  // ← OPEN MANUAL PICKER
+                            }
+                            .padding(horizontal = 14.dp, vertical = 11.dp)
+                    ) {
+                        Icon(Icons.Default.EditCalendar, null, tint = accentColor, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text("Pick a custom date…", color = accentColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Icon(Icons.Default.ChevronRight, null, tint = accentColor.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showPicker = false }) {
+                TextButton(onClick = { showQuickPicker = false }) {
                     Text("Close", color = accentColor)
                 }
             },
             containerColor = Theme.CardBg,
             shape = RoundedCornerShape(18.dp)
         )
+    }
+
+    // ✅ ADD THE MANUAL DATE PICKER DIALOG:
+    if (showManualPicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDate
+                .atStartOfDay(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        )
+
+        DatePickerDialog(
+            onDismissRequest = { showManualPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        val picked = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneId.systemDefault())
+                            .toLocalDate()
+                        onDateSelected(picked)
+                    }
+                    showManualPicker = false
+                }) {
+                    Text("OK", color = accentColor, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManualPicker = false }) {
+                    Text("Cancel", color = Theme.White60)
+                }
+            },
+            colors = DatePickerDefaults.colors(containerColor = Theme.CardBg)
+        ) {
+            DatePicker(
+                state = datePickerState,
+                colors = DatePickerDefaults.colors(
+                    containerColor = Theme.CardBg,
+                    titleContentColor = Theme.White,
+                    headlineContentColor = accentColor,
+                    weekdayContentColor = Theme.White60,
+                    subheadContentColor = Theme.White60,
+                    navigationContentColor = Theme.White,
+                    yearContentColor = Theme.White,
+                    currentYearContentColor = accentColor,
+                    selectedYearContentColor = Theme.BgDeep,
+                    selectedYearContainerColor = accentColor,
+                    dayContentColor = Theme.White,
+                    selectedDayContentColor = Theme.BgDeep,
+                    selectedDayContainerColor = accentColor,
+                    todayContentColor = accentColor,
+                    todayDateBorderColor = accentColor
+                )
+            )
+        }
     }
 }
 
