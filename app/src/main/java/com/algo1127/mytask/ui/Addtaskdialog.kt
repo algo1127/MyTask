@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -421,6 +422,7 @@ private fun DateSelector(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TimePreferenceSelector(
     selected: TimePreference,
@@ -428,11 +430,22 @@ private fun TimePreferenceSelector(
     fixedTime: String,
     onTimeChanged: (String) -> Unit,
     timeError: String?,
-    accentColor: androidx.compose.ui.graphics.Color
+    accentColor: Color
 ) {
+    // Parse current fixedTime string into hour/minute for the picker
+    val (initHour, initMinute) = remember(fixedTime) {
+        val parts = fixedTime.split(":")
+        val h = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 14
+        val m = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 30
+        h to m
+    }
+
+    var showTimePicker by remember { mutableStateOf(false) }
+
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(
-            TimePreference.Fixed(LocalTime.NOON) to "Fixed",
+            // ✅ FIX: build Fixed with the CURRENT parsed time, not LocalTime.NOON
+            TimePreference.Fixed(LocalTime.of(initHour, initMinute)) to "Fixed",
             TimePreference.LaterToday to "Later",
             TimePreference.Tomorrow to "Tomorrow",
             TimePreference.AiDecide to "AI"
@@ -442,7 +455,6 @@ private fun TimePreferenceSelector(
                 pref::class == selected::class -> true
                 else -> false
             }
-
             Surface(
                 onClick = { onSelected(pref) },
                 shape = RoundedCornerShape(10.dp),
@@ -455,37 +467,95 @@ private fun TimePreferenceSelector(
                     fontSize = 12.sp,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                     modifier = Modifier.padding(vertical = 8.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = TextAlign.Center
                 )
             }
         }
     }
 
+    // ✅ NEW: friendly time display + tap-to-open picker (replaces raw text field)
     if (selected is TimePreference.Fixed) {
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = fixedTime,
-            onValueChange = onTimeChanged,
-            label = { Text("Time (HH:mm)", color = Theme.White60) },
-            singleLine = true,
-            isError = timeError != null,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = accentColor,
-                unfocusedBorderColor = Theme.White10,
-                focusedLabelColor = accentColor,
-                unfocusedLabelColor = Theme.White30,
-                cursorColor = accentColor,
-                focusedTextColor = Theme.White,
-                unfocusedTextColor = Theme.White,
-                errorBorderColor = Color.Red,
-                errorLabelColor = Color.Red
-            ),
-            supportingText = { if (timeError != null) Text(timeError, color = Color.Red, fontSize = 11.sp) },
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Theme.White06)
+                .clickable { showTimePicker = true }
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+        ) {
+            Icon(Icons.Outlined.Schedule, null, tint = accentColor, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = String.format("%02d:%02d", initHour, initMinute),
+                color = Theme.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text("tap to change", color = Theme.White30, fontSize = 11.sp)
+        }
+    }
+
+    // ✅ NEW: Material3 TimePickerDialog
+    if (showTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = initHour,
+            initialMinute = initMinute,
+            is24Hour = true
+        )
+
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            containerColor = Theme.CardBg,
+            shape = RoundedCornerShape(18.dp),
+            title = {
+                Text("Select Time", color = Theme.White, fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(
+                        state = timePickerState,
+                        colors = TimePickerDefaults.colors(
+                            clockDialColor = Theme.White06,
+                            clockDialSelectedContentColor = Theme.BgDeep,
+                            clockDialUnselectedContentColor = Theme.White,
+                            selectorColor = accentColor,
+                            containerColor = Theme.CardBg,
+                            periodSelectorBorderColor = accentColor,
+                            timeSelectorSelectedContainerColor = accentColor.copy(alpha = 0.2f),
+                            timeSelectorUnselectedContainerColor = Theme.White06,
+                            timeSelectorSelectedContentColor = accentColor,
+                            timeSelectorUnselectedContentColor = Theme.White60
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // ✅ This is the canonical way to read the picked time
+                    val newTime = String.format("%02d:%02d", timePickerState.hour, timePickerState.minute)
+                    onTimeChanged(newTime)
+                    // Also update the selected preference with the new time so it's not stale
+                    onSelected(TimePreference.Fixed(LocalTime.of(timePickerState.hour, timePickerState.minute)))
+                    showTimePicker = false
+                }) {
+                    Text("OK", color = accentColor, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text("Cancel", color = Theme.White60)
+                }
+            }
         )
     }
 }
-
 // ==================== HELPERS ====================
 private fun getTimeLabel(pref: TimePreference, fixedTime: String): String {
     return when (pref) {

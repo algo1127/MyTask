@@ -1,6 +1,7 @@
 package com.algo1127.mytask.ui
 
 import android.os.Build
+import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -649,14 +650,18 @@ fun DashboardScreen(modifier: Modifier = Modifier) {
             AddEventDialog(
                 defaultDate = selectedDate,
                 onDismiss = { showAddEventDialog = false },
-                onAdd = { _: String, reminders: List<TaskItem> ->
-                    reminders.forEach { task ->
-                        try { notifAi.onTaskCreated(task) } catch (e: Exception) {
-                            android.util.Log.e("DashboardScreen", "onTaskCreated error: ${e.message}", e)
-                        }
-                    }
+                onAdd = { title, date, startTime, endTime, location, notes ->
+                    val event = EventItem(
+                        title = title,
+                        date = date,
+                        startTime = startTime,
+                        endTime = endTime,
+                        location = location,
+                        notes = notes
+                    )
+                    CalendarUtils.addEventToCalendar(context, event)
                     showAddEventDialog = false
-                    refreshKey++ // ✅ trigger refresh
+                    refreshKey++
                 }
             )
         }

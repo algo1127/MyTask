@@ -84,7 +84,15 @@ class CalendarReader(private val context: Context) {
                 } else {
                     // True calendar events (not created by MyTask)
                     events.add(
-                        EventItem(title, startTime, endTime, location, date, id = idGenerator.getAndIncrement())
+                        EventItem(
+                            title = title,
+                            startTime = startTime,
+                            endTime = endTime,
+                            location = location,
+                            notes = description,   // ← real calendar events use description as notes
+                            date = date,
+                            id = idGenerator.getAndIncrement()
+                        )
                     )
                 }
             }

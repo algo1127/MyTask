@@ -22,6 +22,7 @@ data class EventItem(
     val startTime: String,
     val endTime: String,
     val location: String,
+    val notes: String = "",   // ← add this
     val date: LocalDate,
     val id: Long = System.nanoTime()
 )

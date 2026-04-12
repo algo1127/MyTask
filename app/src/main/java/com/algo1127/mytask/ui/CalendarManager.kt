@@ -39,21 +39,21 @@ class CalendarManager(private val context: Context) {
 
         cursor?.use {
             while (it.moveToNext()) {
-                val title = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.TITLE)) ?: ""
-                val startMillis = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
-                val endMillis = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
+                val title    = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.TITLE)) ?: ""
+                val start    = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTSTART))
+                val end      = it.getLong(it.getColumnIndexOrThrow(CalendarContract.Events.DTEND))
                 val location = it.getString(it.getColumnIndexOrThrow(CalendarContract.Events.EVENT_LOCATION)) ?: ""
+                val descIdx  = it.getColumnIndex(CalendarContract.Events.DESCRIPTION)
+                val notes    = if (descIdx >= 0) it.getString(descIdx) ?: "" else ""
 
-                val startTime = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(startMillis),
-                    ZoneId.systemDefault()
+                val startTime = java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(start), ZoneId.systemDefault()
                 ).toLocalTime().toString()
-                val endTime = LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(endMillis),
-                    ZoneId.systemDefault()
+                val endTime = java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(end), ZoneId.systemDefault()
                 ).toLocalTime().toString()
 
-                events.add(EventItem(title, startTime, endTime, location, date))
+                events.add(EventItem(title, startTime, endTime, location, notes, date))
             }
         }
 
