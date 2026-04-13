@@ -34,7 +34,7 @@ If this sparks ideas for your own projects—or if you find inspiration in my ap
 | **Event Management** | ⚠️ Partial | Add events with times, locations, basic recurrence |
 | **Calendar Sync (Write)** | ✅ Working | Tasks/events saved to device calendar |
 | **Calendar Sync (Read)** | ⚠️ In Progress | Reading from calendar has stability issues |
-| **AI Notifications** | ⚠️ Experimental | Smart reminders with escalating tones based on patterns |
+| **AI Notifications** | ❌ Not Working | Smart reminders with escalating tones based on patterns |
 | **Routine Detection** | 🔄 Work-in-Progress | Auto-detects patterns after 5+ similar completions |
 | **Persistent Storage** | ✅ Working | Task patterns saved with Gson/SharedPreferences |
 | **UI** | ✅ Polished | Modern Jetpack Compose interface with animations |
