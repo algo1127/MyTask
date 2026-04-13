@@ -18,39 +18,75 @@ import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 
 class NotifAi(private val context: Context) {
-    private val persistence = Persistence(context)
-    private val phraseList = PhraseList()
-    private val scope = CoroutineScope(Dispatchers.Default)
+
+    private val persistence    = Persistence(context)
+    private val phraseList     = PhraseList()
+    private val learningEngine = LearningEngine(context)
+    private val rewardSystem   = RewardSystem(context)
+    private val scope          = CoroutineScope(Dispatchers.Default)
 
     // AI state
-    private var trustScore = 0.5f
-    private var mood = Mood.HAPPY
-    private var aiPreferences = mutableMapOf<String, String>()
+    private var trustScore     = 0.5f
+    private var mood           = Mood.HAPPY
+    private var aiPreferences  = mutableMapOf<String, String>()
 
     init {
         scope.launch {
-            val state = persistence.getAiState()
+            val state  = persistence.getAiState()
             trustScore = state.first
             aiPreferences = state.second.toMutableMap()
+            // Record app open so we learn active hours
+            learningEngine.recordAppOpened()
         }
     }
 
-    // ==================== NOTIFICATION SENDING (Core Method) ====================
+    // ── Public API for AddTaskDialog "AI Decide" ──────────────────────
+
+    /**
+     * Returns a real data-driven Fixed time for this category.
+     * NOT hardcoded — uses actual usage history.
+     */
+    fun suggestTime(category: TaskCategory): TimePreference.Fixed {
+        val best = learningEngine.getBestTime(category)
+        return TimePreference.Fixed(best)
+    }
+
+    // ── Notification sending ──────────────────────────────────────────
+
     fun sendTaskNotification(task: Task, intensity: Float) {
         scope.launch {
             try {
-                // 1. Generate phrase using PhraseList
+                // Don't notify if the AI says this is a bad slot AND intensity isn't critical
+                if (!learningEngine.shouldNotifyNow(task.category) && intensity < 0.85f) {
+                    android.util.Log.d("NotifAi", "Skipping notification — bad slot / fatigue detected")
+                    return@launch
+                }
+
+                val slotQuality = learningEngine.currentSlotScore(task.category)
+
                 val text = if (aiPreferences["soulless"] == "true") {
                     "Reminder: ${task.title}"
                 } else {
-                    phraseList.pickPhrase(task, intensity, mood, forgetCount = getForgetCount(task.id))
+                    phraseList.pickPhrase(
+                        task,
+                        intensity,
+                        mood,
+                        forgetCount = getForgetCount(task.id)
+                    )
                 }
 
-                // 2. Build notification
-                val channelId = "mytask_channel"
-                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                // Priority is influenced by both intensity AND slot quality
+                val effectivePriority = when {
+                    intensity >= 0.85f || slotQuality >= 0.75 ->
+                        NotificationCompat.PRIORITY_HIGH
+                    else ->
+                        NotificationCompat.PRIORITY_DEFAULT
+                }
 
-                // Create channel if needed
+                val channelId = "mytask_channel"
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                        as NotificationManager
+
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     val channel = NotificationChannel(
                         channelId, "MyTask Notifications",
@@ -59,23 +95,25 @@ class NotifAi(private val context: Context) {
                     manager.createNotificationChannel(channel)
                 }
 
-                // Build notification
                 val builder = NotificationCompat.Builder(context, channelId)
                     .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                    .setContentTitle("MyTask AI")
+                    .setContentTitle("MyTask")
                     .setContentText(text)
-                    .setPriority(if (intensity >= 0.7) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
-                    .addAction(0, "Completed", createIntent(task.id, NotificationAction.COMPLETED))
-                    .addAction(0, "Forgot", createIntent(task.id, NotificationAction.FORGOT))
-                    .addAction(0, "Ignore", createIntent(task.id, NotificationAction.IGNORED))
-                    .addAction(0, "Skip Today", createIntent(task.id, NotificationAction.SKIPPED))
+                    .setPriority(effectivePriority)
+                    .addAction(0, "✓ Done",      createIntent(task.id, NotificationAction.COMPLETED))
+                    .addAction(0, "✗ Forgot",    createIntent(task.id, NotificationAction.FORGOT))
+                    .addAction(0, "→ Skip",      createIntent(task.id, NotificationAction.SKIPPED))
+                    .setAutoCancel(true)
 
-                // Vibrate for high intensity
-                if (intensity >= 0.8) {
-                    builder.setVibrate(longArrayOf(0, 500, 500))
+                if (intensity >= 0.8f) {
+                    builder.setVibrate(longArrayOf(0, 500, 200, 500))
                 }
 
                 manager.notify(task.id.toInt(), builder.build())
+
+                // Record that we sent this — used for response time calculation
+                learningEngine.recordNotificationSent(task.id, task.category)
+                logNotificationSent(task.id, intensity)
 
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Failed to send notification: ${e.message}", e)
@@ -83,48 +121,54 @@ class NotifAi(private val context: Context) {
         }
     }
 
-    // ==================== INTENSITY CALCULATION (The "Roast Logic") ====================
+    // ── Intensity calculation ─────────────────────────────────────────
+
     private fun calculateIntensity(task: Task, now: LocalDateTime): Float {
-        // Base intensity from deadline proximity
-        val dueDate = task.dueDate ?: return 0.3f // Open-ended tasks = low intensity
+        val dueDate = task.dueDate ?: return 0.3f
         val daysUntilDue = ChronoUnit.DAYS.between(now.toLocalDate(), dueDate).toInt()
 
         val deadlineFactor = when {
-            daysUntilDue < 0 -> 1.0f // Overdue = max intensity
-            daysUntilDue == 0 -> 0.9f // Due today
-            daysUntilDue <= 2 -> 0.7f // Due soon
-            else -> 0.4f // Plenty of time
+            daysUntilDue < 0  -> 1.0f
+            daysUntilDue == 0 -> 0.9f
+            daysUntilDue <= 2 -> 0.7f
+            else              -> 0.4f
         }
 
-        // Progress factor (less progress = higher intensity)
         val progressFactor = 1.0f - task.progress
 
-        // Trust score modifier (low trust = AI is more pushy)
-        val trustModifier = if (trustScore < 0.4) 1.2f else 1.0f
+        // Trust modifier now also considers real notification effectiveness
+        val effectiveness = if (learningEngine.hasEnoughData()) {
+            PatternAnalyzer.effectivenessScore(learningEngine.tracker.getAll()).toFloat()
+        } else trustScore
 
-        // Category modifier (Study/Work = slightly higher intensity)
-        val categoryModifier = when(task.category) {
-            TaskCategory.Study, TaskCategory.Work -> 1.1f
-            else -> 1.0f
+        val trustModifier = when {
+            effectiveness < 0.25f -> 1.35f   // very low effectiveness → be more aggressive
+            effectiveness < 0.4f  -> 1.20f
+            effectiveness > 0.7f  -> 0.90f   // doing well → back off a little
+            else                  -> 1.0f
         }
 
-        // Combine factors (clamp to 0.0-1.0)
-        return (deadlineFactor * progressFactor * trustModifier * categoryModifier).coerceIn(0.0f, 1.0f)
+        val categoryModifier = when (task.category) {
+            TaskCategory.Work, TaskCategory.Study -> 1.1f
+            else                                  -> 1.0f
+        }
+
+        return (deadlineFactor * progressFactor * trustModifier * categoryModifier)
+            .coerceIn(0.0f, 1.0f)
     }
 
-    // ==================== TASK EVALUATION (When to Notify) ====================
+    // ── Task evaluation ───────────────────────────────────────────────
+
     fun evaluateTask(task: Task) {
         scope.launch {
             try {
-                val now = LocalDateTime.now()
+                val now       = LocalDateTime.now()
                 val intensity = calculateIntensity(task, now)
 
-                // Only notify if intensity is high enough OR task is due today
-                if (intensity >= 0.5 || (task.dueDate == now.toLocalDate() && task.progress < 1.0f)) {
+                if (intensity >= 0.5 ||
+                    (task.dueDate == now.toLocalDate() && task.progress < 1.0f)
+                ) {
                     sendTaskNotification(task, intensity)
-
-                    // Log for learning (v2: plugs into UsageAnalyzer)
-                    logNotificationSent(task.id, intensity)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Evaluation failed: ${e.message}", e)
@@ -132,38 +176,42 @@ class NotifAi(private val context: Context) {
         }
     }
 
-    // ==================== USER ACTION HANDLERS ====================
+    // ── User action handlers ──────────────────────────────────────────
+
     fun onTaskAction(taskId: Long, action: NotificationAction) {
         scope.launch {
             try {
                 val tasks = persistence.getTasks()
-                val task = tasks.find { it.id == taskId } ?: return@launch
+                val task  = tasks.find { it.id == taskId } ?: return@launch
 
                 when (action) {
                     NotificationAction.COMPLETED -> {
-                        // Mark complete + praise
                         val updated = task.copy(progress = 1.0f, focusState = FocusState.Archived)
                         persistence.saveTask(updated)
                         trustScore = (trustScore + 0.05f).coerceAtMost(1.0f)
+                        // Pass taskId so LearningEngine can compute response time
+                        learningEngine.recordPositive(taskId, task.category)
+                        rewardSystem.onCompleted()
                         showCompletionNotification(task)
                     }
                     NotificationAction.FORGOT -> {
-                        // Log forget + increase intensity next time
                         val forgetCount = getForgetCount(taskId) + 1
                         aiPreferences["forget_${taskId}"] = forgetCount.toString()
                         trustScore = (trustScore - 0.03f).coerceAtLeast(0.0f)
+                        learningEngine.recordForget(taskId, task.category)
+                        rewardSystem.onForgotten()
                     }
                     NotificationAction.IGNORED -> {
-                        // Log ignore + slight trust decrease
                         trustScore = (trustScore - 0.02f).coerceAtLeast(0.0f)
+                        learningEngine.recordIgnore(taskId, task.category)
+                        rewardSystem.onIgnored()
                     }
                     NotificationAction.SKIPPED -> {
-                        // Reschedule logic (v2)
-                        android.util.Log.d("NotifAi", "Task $taskId skipped - reschedule pending")
+                        learningEngine.recordSkip(taskId, task.category)
+                        android.util.Log.d("NotifAi", "Task $taskId skipped")
                     }
                 }
 
-                // Save AI state
                 persistence.saveAiState(trustScore, aiPreferences)
 
             } catch (e: Exception) {
@@ -172,38 +220,31 @@ class NotifAi(private val context: Context) {
         }
     }
 
-    // ✅ SCHEDULE FLEXIBLE TASKS based on time preference
+    // ── Schedule flexible tasks ───────────────────────────────────────
+
     fun scheduleFlexible(task: Task) {
         scope.launch {
             try {
                 when (val pref = task.timePreference) {
                     is TimePreference.Fixed -> {
-                        // Schedule at exact time
                         android.util.Log.d("NotifAi", "Scheduling ${task.title} at ${pref.time}")
-                        // v2: Use WorkManager to schedule exact time notification
                     }
                     TimePreference.LaterToday -> {
-                        // Schedule for later today (2 hours from now)
                         android.util.Log.d("NotifAi", "Scheduling ${task.title} for later today")
-                        // v2: Use WorkManager with initial delay
                     }
                     TimePreference.Tomorrow -> {
-                        // Schedule for tomorrow morning (9 AM)
                         android.util.Log.d("NotifAi", "Scheduling ${task.title} for tomorrow")
-                        // v2: Use WorkManager with calculated delay
                     }
                     is TimePreference.Window -> {
-                        // Schedule within window (e.g., 7-9 AM)
-                        android.util.Log.d("NotifAi", "Scheduling ${task.title} between ${pref.startHour}:00-${pref.endHour}:00")
-                        // v2: Use WorkManager with flexible timing
+                        android.util.Log.d("NotifAi", "Scheduling ${task.title} in window")
                     }
                     TimePreference.AiDecide -> {
-                        // Let AI decide based on usage patterns
-                        android.util.Log.d("NotifAi", "AI will decide timing for ${task.title}")
-                        // v2: Use UsageAnalyzer to find optimal time
+                        // Resolve to real time using learned patterns
+                        val suggested = suggestTime(task.category)
+                        android.util.Log.d("NotifAi",
+                            "AI decided ${task.title} → ${suggested.time}")
                     }
                 }
-                // For v1: Just evaluate immediately for testing
                 evaluateTask(task)
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "scheduleFlexible failed: ${e.message}", e)
@@ -211,26 +252,22 @@ class NotifAi(private val context: Context) {
         }
     }
 
-    // ✅ COMPATIBILITY METHOD for old TaskItem → new Task
+    // ── Compat bridge ─────────────────────────────────────────────────
+
     fun onTaskCreated(item: com.algo1127.mytask.ui.TaskItem) {
         scope.launch {
             try {
-                // Convert old TaskItem to new Task model
-                val task = com.algo1127.mytask.ui.models.Task(
-                    title = item.title,
-                    startDate = item.date,
-                    dueDate = item.date,
-                    category = item.category,
-                    progress = if (item.done) 1.0f else 0.0f,
-                    timePreference = com.algo1127.mytask.ui.models.TimePreference.Fixed(
-                        LocalTime.parse(item.time)
-                    )
+                val task = Task(
+                    title          = item.title,
+                    startDate      = item.date,
+                    dueDate        = item.date,
+                    category       = item.category,
+                    progress       = if (item.done) 1.0f else 0.0f,
+                    timePreference = TimePreference.Fixed(LocalTime.parse(item.time))
                 )
-
-                // Save and schedule
                 persistence.saveTask(task)
+                learningEngine.recordTaskCreated(task.id, task.category)
                 scheduleFlexible(task)
-
                 android.util.Log.d("NotifAi", "Task created (compat): ${item.title}")
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Compat onTaskCreated failed: ${e.message}", e)
@@ -238,21 +275,34 @@ class NotifAi(private val context: Context) {
         }
     }
 
-    // ==================== HELPER METHODS ====================
-    private fun getForgetCount(taskId: Long): Int {
-        return aiPreferences["forget_$taskId"]?.toIntOrNull() ?: 0
-    }
+    // ── Helpers ───────────────────────────────────────────────────────
+
+    private fun getForgetCount(taskId: Long): Int =
+        aiPreferences["forget_$taskId"]?.toIntOrNull() ?: 0
 
     private fun logNotificationSent(taskId: Long, intensity: Float) {
-        // v2: logs to UsageAnalyzer for effectiveness tracking
-        android.util.Log.d("NotifAi", "Notification sent for task $taskId (intensity: $intensity)")
+        android.util.Log.d("NotifAi",
+            "Notification sent for task $taskId (intensity=$intensity, " +
+                    "dataPoints=${learningEngine.dataPointCount()}, " +
+                    "fatigued=${learningEngine.isFatigued()})")
     }
 
     private fun showCompletionNotification(task: Task) {
         scope.launch {
-            val text = phraseList.getCompletionPhrase(task)
-            // Build simple completion notification (same pattern as sendTaskNotification)
-            // ... implementation omitted for brevity ...
+            try {
+                val text    = phraseList.getCompletionPhrase(task)
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                        as NotificationManager
+                val builder = NotificationCompat.Builder(context, "mytask_channel")
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("✓ Done!")
+                    .setContentText(text)
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .setAutoCancel(true)
+                manager.notify((task.id + 900_000L).toInt(), builder.build())
+            } catch (e: Exception) {
+                android.util.Log.e("NotifAi", "Completion notification failed: ${e.message}", e)
+            }
         }
     }
 

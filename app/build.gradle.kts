@@ -48,7 +48,7 @@ dependencies {
     // Firebase BoM and main database module
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.database)
-
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
     // Existing dependencies
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

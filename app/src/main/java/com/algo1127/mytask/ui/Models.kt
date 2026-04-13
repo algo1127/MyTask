@@ -36,4 +36,6 @@ enum class TaskCategory(
     Study(Icons.Default.School, Color(0xFF4DFFD2), "Study"),
     Personal(Icons.Default.Favorite, Color(0xFFB57BFF), "Personal"),
     Work(Icons.Default.Business, Color(0xFF3FC3F7), "Work")
+
+
 }
