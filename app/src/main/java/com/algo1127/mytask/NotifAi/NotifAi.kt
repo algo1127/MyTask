@@ -35,8 +35,9 @@ class NotifAi(private val context: Context) {
             val state  = persistence.getAiState()
             trustScore = state.first
             aiPreferences = state.second.toMutableMap()
-            // Record app open so we learn active hours
             learningEngine.recordAppOpened()
+            // Start background usage collection
+            UsageAccessCollector.schedule(context)
         }
     }
 

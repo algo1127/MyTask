@@ -15,7 +15,10 @@ import java.time.LocalTime
  * Nothing here is hardcoded except the minimum data threshold below
  * which we fall back to a sensible category-aware default.
  */
+
+
 class LearningEngine(context: Context) {
+    private val appContext: Context = context
 
     val tracker = UsageTracker(context)
 
@@ -62,14 +65,18 @@ class LearningEngine(context: Context) {
      */
     fun shouldNotifyNow(category: TaskCategory): Boolean {
         val records = tracker.getAll()
-        if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) return true  // no data → always allow
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
 
-        val fatigued = PatternAnalyzer.isFatigued(records)
-        if (fatigued) return false
+        // Hard block from device context (idle, in call, etc.)
+        if (ContextScorer.shouldHardBlock(deviceCtx)) return false
+
+        if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) return true
+        if (PatternAnalyzer.isFatigued(records)) return false
 
         val now = LocalDateTime.now()
         val score = PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
-        return score >= 0.30  // minimum viable slot score
+        val contextBonus = ContextScorer.contextDelta(deviceCtx)
+        return (score + contextBonus) >= 0.30
     }
 
     /**
@@ -78,9 +85,11 @@ class LearningEngine(context: Context) {
      */
     fun currentSlotScore(category: TaskCategory): Double {
         val records = tracker.getAll()
-        if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) return 0.5
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) return 0.5 + ContextScorer.contextDelta(deviceCtx)
         val now = LocalDateTime.now()
-        return PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
+        val base = PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
+        return (base + ContextScorer.contextDelta(deviceCtx)).coerceIn(0.0, 1.0)
     }
 
     // ═════════════════════════════════════════════════════════════════
