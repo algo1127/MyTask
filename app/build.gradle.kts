@@ -92,4 +92,8 @@ dependencies {
 
     // ✅ Required for Java 8 time types on older Android
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+
+    implementation("androidx.compose.material:material:1.7.x")
+    implementation("androidx.compose.material3.adaptive:adaptive:1.0.x") 
 }
