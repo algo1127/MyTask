@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,7 @@ import com.algo1127.mytask.ui.*
 import com.algo1127.mytask.ui.models.TimePreference
 import java.time.*
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -42,7 +44,8 @@ fun AddTaskDialog(
         timePreference: TimePreference,
         category: TaskCategory,
         date: LocalDate,
-        description: String?
+        description: String?,
+        repetition: RepetitionInfo?,
     ) -> Unit
 ) {
     val accentColor  = if (sourceTab == 0) Theme.Teal else Theme.Purple
@@ -58,6 +61,7 @@ fun AddTaskDialog(
     var selectedCategory by remember { mutableStateOf(TaskCategory.Study) }
     var selectedDate     by remember { mutableStateOf(defaultDate) }
     var timePreference   by remember { mutableStateOf<TimePreference>(TimePreference.LaterToday) }
+    var selectedRepetition by remember { mutableStateOf<RepetitionInfo?>(null) }
     var fixedTime        by remember { mutableStateOf("14:30") }
     var timeError        by remember { mutableStateOf<String?>(null) }
     var showBatchAdd     by remember { mutableStateOf(false) }
@@ -133,6 +137,13 @@ fun AddTaskDialog(
                 )
                 Spacer(Modifier.height(12.dp))
 
+                // ── Repetition ─────────────────────────────────────────────
+                RepeatingSelector(
+                    onRepetitionChanged = { selectedRepetition = it },
+                    accentColor = accentColor
+                )
+                Spacer(Modifier.height(12.dp))
+
                 // ── Time preference ────────────────────────────────────────
                 Text(
                     "When?",
@@ -149,7 +160,6 @@ fun AddTaskDialog(
                         fixedTime  = it
                         timeError  = validateTime(it)
                     },
-                    timeError        = timeError,
                     accentColor      = accentColor,
                     selectedCategory = selectedCategory,
                     notifAi          = notifAi
@@ -170,16 +180,18 @@ fun AddTaskDialog(
                 }
 
                 // ── Batch preview ──────────────────────────────────────────
-                if (showBatchAdd && itemsToAdd.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Items to add:", color = Theme.White30, fontSize = 12.sp)
-                    itemsToAdd.forEach { item ->
-                        Row(
-                            modifier            = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("• ${item.title}", color = Theme.White80, fontSize = 13.sp)
-                            Text(item.timeLabel,    color = Theme.White30, fontSize = 11.sp)
+                AnimatedVisibility(visible = showBatchAdd && itemsToAdd.isNotEmpty()) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Items to add:", color = Theme.White30, fontSize = 12.sp)
+                        for (item in itemsToAdd) {
+                            Row(
+                                modifier            = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("• ${item.title}", color = Theme.White80, fontSize = 13.sp)
+                                Text(item.timeLabel,    color = Theme.White30, fontSize = 11.sp)
+                            }
                         }
                     }
                 }
@@ -190,8 +202,8 @@ fun AddTaskDialog(
                 if (showBatchAdd) {
                     TextButton(
                         onClick = {
-                            if (title.isNotBlank() &&
-                                (timePreference !is TimePreference.Fixed || timeError == null)
+                            if (title != "" &&
+                                (timePreference !is TimePreference.Fixed || (timeError == null))
                             ) {
                                 itemsToAdd.add(
                                     QueuedItem(
@@ -200,7 +212,8 @@ fun AddTaskDialog(
                                         category       = selectedCategory,
                                         date           = selectedDate,
                                         description    = description.ifBlank { null },
-                                        timeLabel      = getTimeLabel(timePreference, fixedTime)
+                                        timeLabel      = getTimeLabel(timePreference, fixedTime),
+                                        repetition     = selectedRepetition
                                     )
                                 )
                                 title          = ""
@@ -208,7 +221,7 @@ fun AddTaskDialog(
                                 timePreference = TimePreference.LaterToday
                             }
                         },
-                        enabled = title.isNotBlank()
+                        enabled = title != ""
                     ) {
                         Text(
                             "Add to Batch",
@@ -222,17 +235,18 @@ fun AddTaskDialog(
                 TextButton(
                     onClick = {
                         if (showBatchAdd && itemsToAdd.isNotEmpty()) {
-                            itemsToAdd.forEach { item ->
+                            for (item in itemsToAdd) {
                                 onAdd(
                                     item.title,
                                     item.timePreference,
                                     item.category,
                                     item.date,
-                                    item.description
+                                    item.description,
+                                    item.repetition
                                 )
                             }
                             itemsToAdd.clear()
-                        } else if (title.isNotBlank() &&
+                        } else if (title != "" &&
                             (timePreference !is TimePreference.Fixed || timeError == null)
                         ) {
                             onAdd(
@@ -240,14 +254,15 @@ fun AddTaskDialog(
                                 timePreference,
                                 selectedCategory,
                                 selectedDate,
-                                description.ifBlank { null }
+                                description.ifBlank { null },
+                                selectedRepetition
                             )
                         }
                         onDismiss()
                     },
                     enabled = if (showBatchAdd) itemsToAdd.isNotEmpty()
-                    else title.isNotBlank() &&
-                            (timePreference !is TimePreference.Fixed || timeError == null)
+                    else ((title != "") &&
+                            (timePreference !is TimePreference.Fixed || (timeError == null)))
                 ) {
                     Text(
                         if (showBatchAdd) "Add All" else "Add",
@@ -301,7 +316,7 @@ private fun CategorySelector(
             trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             colors        = textFieldColors(accentColor),
             modifier      = Modifier
-                .menuAnchor()
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
         )
@@ -311,7 +326,7 @@ private fun CategorySelector(
             containerColor    = Theme.BgSurface,
             shape             = RoundedCornerShape(14.dp)
         ) {
-            TaskCategory.values().forEach { cat ->
+            for (cat in TaskCategory.values()) {
                 DropdownMenuItem(
                     text    = { Text(cat.label, color = Theme.White80, fontSize = 14.sp) },
                     onClick = { onSelected(cat); expanded = false },
@@ -378,7 +393,8 @@ private fun DateSelector(
                     Text("Quick select:", color = Theme.White60, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0, 1, 2, 7, 14).forEach { days ->
+                        val daysOptions = arrayOf(0, 1, 2, 7, 14)
+                        for (days in daysOptions) {
                             val date = LocalDate.now().plusDays(days.toLong())
                             Surface(
                                 onClick = { onDateSelected(date); showQuickPicker = false },
@@ -393,7 +409,7 @@ private fun DateSelector(
                                     Text(
                                         date.dayOfWeek.getDisplayName(
                                             java.time.format.TextStyle.SHORT,
-                                            java.util.Locale.getDefault()
+                                            Locale.getDefault()
                                         ),
                                         color    = Theme.White60,
                                         fontSize = 11.sp
@@ -513,17 +529,13 @@ private fun TimePreferenceSelector(
     onSelected:       (TimePreference) -> Unit,
     fixedTime:        String,
     onTimeChanged:    (String) -> Unit,
-    timeError:        String?,
     accentColor:      Color,
     selectedCategory: TaskCategory,
     notifAi:          NotifAi
 ) {
-    val (initHour, initMinute) = remember(fixedTime) {
-        val parts = fixedTime.split(":")
-        val h = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 14
-        val m = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 30
-        h to m
-    }
+    val parsedTime = try { LocalTime.parse(fixedTime) } catch (_: Exception) { LocalTime.of(14, 30) }
+    val initHour = parsedTime.hour
+    val initMinute = parsedTime.minute
 
     var showTimePicker by remember { mutableStateOf(false) }
 
@@ -532,15 +544,22 @@ private fun TimePreferenceSelector(
         modifier              = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        listOf(
-            TimePreference.Fixed(LocalTime.of(initHour, initMinute)) to "Fixed",
-            TimePreference.LaterToday                                to "Later",
-            TimePreference.Tomorrow                                  to "Tomorrow",
-            TimePreference.AiDecide                                  to "AI"
-        ).forEach { (pref, label) ->
-            val isSelected = when {
-                pref is TimePreference.Fixed && selected is TimePreference.Fixed -> true
-                pref::class == selected::class -> true
+        val optionPrefs = arrayOf(
+            TimePreference.Fixed(LocalTime.of(initHour, initMinute)),
+            TimePreference.LaterToday,
+            TimePreference.Tomorrow,
+            TimePreference.AiDecide
+        )
+        val optionLabels = arrayOf("Fixed", "Later", "Tomorrow", "AI")
+        
+        for (i in 0..3) {
+            val pref = optionPrefs[i]
+            val label = optionLabels[i]
+            val isSelected = when (pref) {
+                is TimePreference.Fixed -> selected is TimePreference.Fixed
+                TimePreference.LaterToday -> selected is TimePreference.LaterToday
+                TimePreference.Tomorrow -> selected is TimePreference.Tomorrow
+                TimePreference.AiDecide -> selected is TimePreference.AiDecide
                 else -> false
             }
             Surface(
@@ -549,9 +568,11 @@ private fun TimePreferenceSelector(
                         // Resolve AI suggestion immediately to a real Fixed time
                         val suggested = notifAi.suggestTime(selectedCategory)
                         onSelected(suggested)
-                        onTimeChanged(
-                            String.format("%02d:%02d", suggested.time.hour, suggested.time.minute)
-                        )
+                        val hVal = suggested.time.hour
+                        val mVal = suggested.time.minute
+                        val hStr = if (hVal < 10) "0$hVal" else hVal.toString()
+                        val mStr = if (mVal < 10) "0$mVal" else mVal.toString()
+                        onTimeChanged("$hStr:$mStr")
                     } else {
                         onSelected(pref)
                     }
@@ -590,11 +611,13 @@ private fun TimePreferenceSelector(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(10.dp))
+            val hStr = if (initHour < 10) "0$initHour" else initHour.toString()
+            val mStr = if (initMinute < 10) "0$initMinute" else initMinute.toString()
             Text(
-                String.format("%02d:%02d", initHour, initMinute),
+                "$hStr:$mStr",
                 color      = Theme.White,
                 fontSize   = 16.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.Bold
             )
             Spacer(Modifier.weight(1f))
             Text("tap to change", color = Theme.White30, fontSize = 11.sp)
@@ -643,11 +666,11 @@ private fun TimePreferenceSelector(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val newTime = String.format(
-                        "%02d:%02d",
-                        timePickerState.hour,
-                        timePickerState.minute
-                    )
+                    val hVal = timePickerState.hour
+                    val mVal = timePickerState.minute
+                    val hStr = if (hVal < 10) "0$hVal" else hVal.toString()
+                    val mStr = if (mVal < 10) "0$mVal" else mVal.toString()
+                    val newTime = "$hStr:$mStr"
                     onTimeChanged(newTime)
                     onSelected(
                         TimePreference.Fixed(
@@ -680,15 +703,9 @@ private fun getTimeLabel(pref: TimePreference, fixedTime: String): String = when
 
 private fun validateTime(time: String): String? {
     return try {
-        val parts = time.split(":")
-        if (parts.size != 2)                        return "Use HH:mm"
-        val h = parts[0].toIntOrNull()              ?: return "Invalid hours"
-        val m = parts[1].toIntOrNull()              ?: return "Invalid minutes"
-        if (h !in 0..23)                            return "0-23"
-        if (m !in 0..59)                            return "0-59"
         LocalTime.parse(time)
         null
-    } catch (e: Exception) { "Invalid" }
+    } catch (_: Exception) { "Invalid" }
 }
 
 private data class QueuedItem(
@@ -697,5 +714,6 @@ private data class QueuedItem(
     val category:       TaskCategory,
     val date:           LocalDate,
     val description:    String?,
-    val timeLabel:      String
+    val timeLabel:      String,
+    val repetition:     RepetitionInfo? = null
 )

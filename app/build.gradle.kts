@@ -2,8 +2,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
     id("com.google.gms.google-services")  // Required for Firebase
-
 }
 
 android {
@@ -47,11 +47,17 @@ android {
 dependencies {
     // Firebase BoM and main database module
     implementation(platform(libs.firebase.bom))
+    implementation(libs.androidx.compose.material3.android)
     implementation(libs.firebase.database)
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
-    // Existing dependencies
+    implementation(libs.androidx.work.runtime.ktx)
+    // Room
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.room.ktx)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -63,14 +69,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.compose.foundation)
-    implementation(libs.androidx.room.common.jvm)
-    implementation(libs.androidx.room.ktx)
-    implementation(libs.androidx.work.runtime.ktx)
     implementation("com.google.code.gson:gson:2.10.1")
     implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
     implementation(libs.androidx.material3)
     implementation(libs.androidx.datastore.core)
-    implementation(libs.room.ktx)
 
     // Tests
     testImplementation(libs.junit)

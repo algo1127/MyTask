@@ -1,4 +1,6 @@
-package com.algo1127.mytask.ui
+package com.algo1127.mytask.ui.dialogs
+
+import com.algo1127.mytask.ui.Theme
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.android.gms.common.util.CollectionUtils.listOf
 
 @Composable
 fun SettingsDialog(onDismiss: () -> Unit) {

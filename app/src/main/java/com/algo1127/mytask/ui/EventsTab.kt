@@ -3,6 +3,8 @@ package com.algo1127.mytask.ui
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Event
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
@@ -48,9 +52,12 @@ private fun eventStatus(startTime: String, endTime: String): EventStatus {
 // ─── Main composable ──────────────────────────────────────────────────────────
 
 @Composable
-fun EventsTab(events: List<EventItem>, selectedDate: LocalDate) {
-    val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
+fun EventsTab(
+    events: List<EventItem>, 
+    selectedDate: LocalDate,
+    completedIds: Set<Long>,
+    onToggleCompletion: (Long, Boolean) -> Unit
+) {
     val sorted = remember(events, selectedDate) {
         events
             .filter { it.date == selectedDate }
@@ -72,7 +79,6 @@ fun EventsTab(events: List<EventItem>, selectedDate: LocalDate) {
         return
     }
 
-    // Refresh current time every 30 s so ACTIVE status updates without restart
     var now by remember { mutableStateOf(LocalTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -85,62 +91,82 @@ fun EventsTab(events: List<EventItem>, selectedDate: LocalDate) {
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(0.dp)
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+        contentPadding = PaddingValues(bottom = 100.dp)
     ) {
         items(sorted, key = { it.id }) { event ->
             val status = eventStatus(event.startTime, event.endTime)
-            MetroEventRow(event = event, status = status)
+            val isCompleted = completedIds.contains(event.id)
+            MetroEventRow(
+                event = event, 
+                status = status, 
+                isCompleted = isCompleted,
+                onToggle = { onToggleCompletion(event.id, !isCompleted) },
+                modifier = Modifier.animateItem()
+            )
         }
-        item { Spacer(Modifier.height(100.dp)) }
     }
 }
 
-// ─── Single metro row ─────────────────────────────────────────────────────────
-
 @Composable
-private fun MetroEventRow(event: EventItem, status: EventStatus) {
+private fun MetroEventRow(
+    event: EventItem, 
+    status: EventStatus,
+    isCompleted: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var expanded by remember { mutableStateOf(false) }
     val hasDetails = event.location.isNotBlank() || event.notes.isNotBlank()
+    
+    val canMarkDone = status == EventStatus.PAST
 
-    val dotColor = when (status) {
-        EventStatus.PAST     -> Theme.White30
-        EventStatus.ACTIVE   -> Theme.Blue
-        EventStatus.UPCOMING -> Theme.Blue.copy(alpha = 0.55f)
-    }
+    val dotColor by animateColorAsState(
+        targetValue = when {
+            isCompleted -> Theme.Teal
+            status == EventStatus.PAST     -> Theme.White30
+            status == EventStatus.ACTIVE   -> Theme.Blue
+            else -> Theme.Blue.copy(alpha = 0.55f)
+        },
+        label = "dotColor"
+    )
+    
     val railColor  = Theme.White10
-    val cardAlpha  = if (status == EventStatus.PAST) 0.45f else 1f
-    val titleDeco  = if (status == EventStatus.PAST) TextDecoration.LineThrough else TextDecoration.None
-    val titleColor = if (status == EventStatus.PAST) Theme.White30 else Theme.White
-    val badgeBg    = when (status) {
-        EventStatus.PAST     -> Theme.White06
-        EventStatus.ACTIVE   -> Theme.Blue.copy(alpha = 0.18f)
-        EventStatus.UPCOMING -> Theme.White06
+    val cardAlpha  by animateFloatAsState(if (status == EventStatus.PAST && !isCompleted) 0.45f else 1f, label = "cardAlpha")
+    val titleDeco  = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+    val titleColor by animateColorAsState(if (isCompleted) Theme.White30 else Theme.White, label = "titleColor")
+    
+    val badgeBg = when {
+        isCompleted -> Theme.Teal.copy(alpha = 0.18f)
+        status == EventStatus.PAST -> Theme.White06
+        status == EventStatus.ACTIVE -> Theme.Blue.copy(alpha = 0.18f)
+        else -> Theme.White06
     }
-    val badgeText  = when (status) {
-        EventStatus.PAST     -> "Done"
-        EventStatus.ACTIVE   -> "Now"
-        EventStatus.UPCOMING -> ""
+    val badgeText = when {
+        isCompleted -> "Done"
+        status == EventStatus.PAST -> "Past"
+        status == EventStatus.ACTIVE -> "Now"
+        else -> ""
     }
-    val badgeColor = when (status) {
-        EventStatus.PAST     -> Theme.White30
-        EventStatus.ACTIVE   -> Theme.Blue
-        EventStatus.UPCOMING -> Theme.White30
+    val badgeColor = when {
+        isCompleted -> Theme.Teal
+        status == EventStatus.PAST -> Theme.White30
+        status == EventStatus.ACTIVE -> Theme.Blue
+        else -> Theme.White30
     }
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min) // ← add this
+            .height(IntrinsicSize.Min)
             .alpha(cardAlpha)
     ) {
-        // ── Rail + dot column ──────────────────────────────────────────
         Box(
             contentAlignment = Alignment.TopCenter,
             modifier = Modifier
                 .width(48.dp)
                 .fillMaxHeight()
         ) {
-            // Continuous rail line spanning the full row height
             Box(
                 Modifier
                     .width(2.dp)
@@ -148,7 +174,6 @@ private fun MetroEventRow(event: EventItem, status: EventStatus) {
                     .background(railColor)
             )
 
-            // Station dot aligned with the time label
             Box(
                 modifier = Modifier
                     .padding(top = 22.dp)
@@ -156,7 +181,7 @@ private fun MetroEventRow(event: EventItem, status: EventStatus) {
                     .clip(CircleShape)
                     .background(dotColor)
             ) {
-                if (status == EventStatus.ACTIVE) {
+                if (status == EventStatus.ACTIVE && !isCompleted) {
                     Box(
                         Modifier
                             .size(6.dp)
@@ -168,7 +193,6 @@ private fun MetroEventRow(event: EventItem, status: EventStatus) {
             }
         }
 
-        // ── Time + card column ────────────────────────────────────────
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -206,13 +230,17 @@ private fun MetroEventRow(event: EventItem, status: EventStatus) {
                                 modifier = Modifier
                                     .size(36.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Theme.Blue.copy(alpha = 0.12f))
+                                    .background(if (isCompleted) Theme.Teal.copy(alpha = 0.12f) else Theme.Blue.copy(alpha = 0.12f))
+                                    .clickable(enabled = canMarkDone) { onToggle() }
                             ) {
-                                Icon(
-                                    Icons.Default.Event, null,
-                                    tint = dotColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                AnimatedContent(isCompleted, label = "iconAnim") { completed ->
+                                    Icon(
+                                        imageVector = if (completed) Icons.Default.CheckCircle else Icons.Default.Event,
+                                        contentDescription = null,
+                                        tint = if (completed) Theme.Teal else dotColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
 
                             Spacer(Modifier.width(10.dp))
@@ -252,17 +280,19 @@ private fun MetroEventRow(event: EventItem, status: EventStatus) {
                             Spacer(Modifier.width(8.dp))
 
                             if (badgeText.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = badgeBg
-                                ) {
-                                    Text(
-                                        badgeText,
-                                        color = badgeColor,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                    )
+                                AnimatedContent(badgeText, label = "badgeText") { text ->
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = badgeBg
+                                    ) {
+                                        Text(
+                                            text,
+                                            color = badgeColor,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
                                 }
                             }
 
