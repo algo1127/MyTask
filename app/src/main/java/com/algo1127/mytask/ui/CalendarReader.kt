@@ -18,9 +18,6 @@ class CalendarReader(private val context: Context) {
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    // ✅ Returns BOTH tasks and events separately
-    private val idGenerator = java.util.concurrent.atomic.AtomicLong(1000000L)
-
     fun getItemsForDate(date: LocalDate): Pair<List<TaskItem>, List<EventItem>> {
         if (!hasCalendarPermission()) {
             android.util.Log.e("CalendarReader", "No calendar permission!")
@@ -29,69 +26,64 @@ class CalendarReader(private val context: Context) {
 
         val tasks = mutableListOf<TaskItem>()
         val events = mutableListOf<EventItem>()
-        val seenIds = mutableSetOf<String>()  // ✅ Prevent duplicates
 
         val startOfDay = date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val endOfDay = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-        val uri = CalendarContract.Events.CONTENT_URI
+        // ✅ Use Instances table to correctly expand repeating events
+        val uriBuilder = CalendarContract.Instances.CONTENT_URI.buildUpon()
+        android.content.ContentUris.appendId(uriBuilder, startOfDay)
+        android.content.ContentUris.appendId(uriBuilder, endOfDay)
+        val uri = uriBuilder.build()
+
         val projection = arrayOf(
-            CalendarContract.Events._ID,
+            CalendarContract.Instances.EVENT_ID,
             CalendarContract.Events.TITLE,
-            CalendarContract.Events.DTSTART,
-            CalendarContract.Events.DTEND,
+            CalendarContract.Instances.BEGIN,
+            CalendarContract.Instances.END,
             CalendarContract.Events.EVENT_LOCATION,
             CalendarContract.Events.DESCRIPTION
         )
-        val selection = "((${CalendarContract.Events.DTSTART} >= ?) AND (${CalendarContract.Events.DTSTART} < ?))"
-        val selectionArgs = arrayOf(startOfDay.toString(), endOfDay.toString())
 
-        context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+        context.contentResolver.query(uri, projection, null, null, CalendarContract.Instances.BEGIN + " ASC")?.use { cursor ->
             while (cursor.moveToNext()) {
-                val calendarId = cursor.getString(
-                    cursor.getColumnIndexOrThrow(CalendarContract.Events._ID)
-                )
-
-                if (seenIds.contains(calendarId)) continue
-                seenIds.add(calendarId)
-
-                val title = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.TITLE))
-                val startTime = getTimestampTime(cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTSTART)))
-                val endTime = getTimestampTime(cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Events.DTEND)))
+                val eventId = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.EVENT_ID))
+                val title = cursor.getString(cursor.getColumnIndexOrThrow(CalendarContract.Events.TITLE)) ?: "Untitled"
+                val begin = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.BEGIN))
+                val end = cursor.getLong(cursor.getColumnIndexOrThrow(CalendarContract.Instances.END))
+                val startTime = getTimestampTime(begin)
+                val endTime = getTimestampTime(end)
+                
                 val locationIndex = cursor.getColumnIndex(CalendarContract.Events.EVENT_LOCATION)
                 val location = if (locationIndex >= 0) cursor.getString(locationIndex) ?: "" else ""
                 val descriptionIndex = cursor.getColumnIndex(CalendarContract.Events.DESCRIPTION)
                 val description = if (descriptionIndex >= 0) cursor.getString(descriptionIndex) ?: "" else ""
 
-                // ✅ FIX: Parse both type markers
                 val isTask = description.contains("TYPE:TASK")
                 val isReminder = description.contains("TYPE:REMINDER")
 
                 if (isTask || isReminder) {
                     val category = extractCategory(description)
-
-                    // ✅ FIX: Pass isReminder explicitly
                     tasks.add(
                         TaskItem(
                             title = title,
                             time = startTime,
                             category = category,
                             date = date,
-                            isReminder = isReminder,  // ← This was missing!
-                            id = idGenerator.getAndIncrement()
+                            isReminder = isReminder,
+                            id = eventId // ✅ Use real Event ID
                         )
                     )
                 } else {
-                    // True calendar events (not created by MyTask)
                     events.add(
                         EventItem(
                             title = title,
                             startTime = startTime,
                             endTime = endTime,
                             location = location,
-                            notes = description,   // ← real calendar events use description as notes
+                            notes = description,
                             date = date,
-                            id = idGenerator.getAndIncrement()
+                            id = eventId // ✅ Use real Event ID
                         )
                     )
                 }

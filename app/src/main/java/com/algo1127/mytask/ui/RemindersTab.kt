@@ -35,11 +35,12 @@ fun RemindersTab(
     tasks: List<TaskItem>,
     selectedDate: LocalDate,
     notifAi: NotifAi,
-    completedTasks: MutableList<Long>,
-    onTaskCompleted: (Long) -> Unit
+    completedIds: Set<Long>,
+    onToggleCompletion: (Long, Boolean) -> Unit
 ) {
-    // ✅ Only show items that were created from the Reminders tab
-    val visibleTasks = tasks.filter { it.date == selectedDate && it.isReminder }
+    val visibleTasks = remember(tasks, selectedDate) {
+        tasks.filter { it.date == selectedDate && it.isReminder }
+    }
 
     if (visibleTasks.isEmpty()) {
         EmptyState(
@@ -51,19 +52,24 @@ fun RemindersTab(
     } else {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 100.dp)
         ) {
             items(visibleTasks, key = { it.id }) { item ->
-                val isCompleted = completedTasks.contains(item.id)
+                val isCompleted = completedIds.contains(item.id)
+                
                 ReminderRow(
                     item = item,
                     isCompleted = isCompleted,
                     onToggle = {
-                        if (!isCompleted) onTaskCompleted(item.id)
-                    }
+                        onToggleCompletion(item.id, !isCompleted)
+                    },
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(300),
+                        placementSpec = spring(stiffness = Spring.StiffnessLow)
+                    )
                 )
             }
-            item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 }
@@ -72,7 +78,8 @@ fun RemindersTab(
 private fun ReminderRow(
     item: TaskItem,
     isCompleted: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var isTapped by remember { mutableStateOf(false) }
     LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
@@ -82,9 +89,12 @@ private fun ReminderRow(
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
         label = "reminderScale"
     )
+    
+    val bgAlpha by animateFloatAsState(if (isCompleted) 0.12f else 1f, label = "bgAlpha")
+    val decoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
 
     Surface(
-        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
+        modifier = modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent
     ) {
@@ -117,19 +127,21 @@ private fun ReminderRow(
                     modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp))
                         .background(if (isCompleted) Theme.Teal.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
                 ) {
-                    Icon(
-                        imageVector = if (isCompleted) Icons.Default.CheckCircle else item.category.icon,
-                        contentDescription = null,
-                        tint = if (isCompleted) Theme.Teal else item.category.color,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    AnimatedContent(isCompleted, label = "iconAnim") { completed ->
+                        Icon(
+                            imageVector = if (completed) Icons.Default.CheckCircle else item.category.icon,
+                            contentDescription = null,
+                            tint = if (completed) Theme.Teal else item.category.color,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(13.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = item.title, color = if (isCompleted) Theme.White30 else Theme.White,
                         fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        textDecoration = decoration,
                         maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(5.dp))
@@ -141,8 +153,12 @@ private fun ReminderRow(
                         Text(item.time, color = Theme.White60, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-                if (isCompleted) {
-                    Spacer(modifier = Modifier.width(10.dp))
+                
+                AnimatedVisibility(
+                    visible = isCompleted,
+                    enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                    exit = scaleOut() + fadeOut()
+                ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).clip(CircleShape).background(Theme.Teal)) {
                         Icon(Icons.Default.Check, null, tint = Theme.BgDeep, modifier = Modifier.size(16.dp))
                     }

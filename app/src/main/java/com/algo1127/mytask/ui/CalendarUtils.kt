@@ -17,42 +17,55 @@ import java.util.Locale
 import kotlin.collections.map
 
 object CalendarUtils {
-    fun addTaskToCalendar(context: Context, task: TaskItem): Long? {
+    fun addTaskToCalendar(context: Context, task: TaskItem, rrule: String? = null): Long? {
         return try {
             val time = LocalTime.parse(task.time)
             val dateTime = LocalDateTime.of(task.date, time)
             val startMillis = dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            
+            val calId = getDefaultCalendarId(context)
+            android.util.Log.d("CalendarUtils", "Using Calendar ID: $calId for task ${task.title}")
 
-            // In CalendarUtils.kt - addTaskToCalendar()
-            // In CalendarUtils.kt - addTaskToCalendar()
             val values = ContentValues().apply {
-                put(CalendarContract.Events.CALENDAR_ID, getDefaultCalendarId(context))
+                put(CalendarContract.Events.CALENDAR_ID, calId)
                 put(CalendarContract.Events.TITLE, task.title)
                 put(CalendarContract.Events.DTSTART, startMillis)
-                put(CalendarContract.Events.DTEND, startMillis + 60 * 60 * 1000)
+                put(CalendarContract.Events.DTEND, startMillis + 30 * 60 * 1000) // 30 min duration
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
 
-                // ✅ FIX: Use REMINDER or TASK based on isReminder flag
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
                 put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}||TYPE:$typeMarker")
 
                 put(CalendarContract.Events.HAS_ALARM, 1)
+                if (rrule != null) {
+                    put(CalendarContract.Events.RRULE, rrule)
+                }
             }
 
             val uri = context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
-            val eventId = uri?.lastPathSegment?.toLong()
-
+            if (uri == null) {
+                android.util.Log.e("CalendarUtils", "ContentResolver.insert returned NULL")
+                return null
+            }
+            
+            val eventId = uri.lastPathSegment?.toLong()
+            android.util.Log.d("CalendarUtils", "Created Event ID: $eventId")
+            
             // Add reminder (15 minutes before)
             if (eventId != null) {
-                val reminderValues = ContentValues().apply {
-                    put(CalendarContract.Reminders.EVENT_ID, eventId)
-                    put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-                    put(CalendarContract.Reminders.MINUTES, 15)
+                try {
+                    val reminderValues = ContentValues().apply {
+                        put(CalendarContract.Reminders.EVENT_ID, eventId)
+                        put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
+                        put(CalendarContract.Reminders.MINUTES, 15)
+                    }
+                    context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, reminderValues)
+                } catch (re: Exception) {
+                    android.util.Log.w("CalendarUtils", "Failed to add reminder, but event was created: ${re.message}")
                 }
-                context.contentResolver.insert(CalendarContract.Reminders.CONTENT_URI, reminderValues)
             }
 
-            eventId
+            return eventId
         } catch (e: Exception) {
             android.util.Log.e("CalendarUtils", "Error adding task to calendar: ${e.message}", e)
             null
@@ -90,48 +103,71 @@ object CalendarUtils {
     }
 
     private fun getDefaultCalendarId(context: Context): Long {
-        val projection = arrayOf(CalendarContract.Calendars._ID)
-        val cursor = context.contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            "${CalendarContract.Calendars.VISIBLE} = 1 AND ${CalendarContract.Calendars.IS_PRIMARY} = 1",
-            null,
-            null
+        val projection = arrayOf(
+            CalendarContract.Calendars._ID,
+            CalendarContract.Calendars.ACCOUNT_NAME,
+            CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+            CalendarContract.Calendars.OWNER_ACCOUNT
         )
-        cursor?.use {
-            if (it.moveToFirst()) {
-                return it.getLong(0)
+        
+        // 1. Log all available calendars for debugging
+        try {
+            context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, projection, null, null, null)?.use { cursor ->
+                android.util.Log.d("CalendarUtils", "--- Available Calendars ---")
+                while (cursor.moveToNext()) {
+                    android.util.Log.d("CalendarUtils", "ID: ${cursor.getLong(0)}, Name: ${cursor.getString(2)}, Account: ${cursor.getString(1)}")
+                }
+                android.util.Log.d("CalendarUtils", "---------------------------")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CalendarUtils", "Failed to query calendars: ${e.message}")
+        }
+
+        // 2. Try to find the best candidate (Primary, or matching account)
+        val selection = "${CalendarContract.Calendars.VISIBLE} = 1"
+        context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, projection, selection, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val id = cursor.getLong(0)
+                android.util.Log.d("CalendarUtils", "Selected Calendar ID: $id")
+                return id
             }
         }
-        // Fallback: Get first available calendar
-        val fallbackCursor = context.contentResolver.query(
-            CalendarContract.Calendars.CONTENT_URI,
-            projection,
-            "${CalendarContract.Calendars.VISIBLE} = 1",
-            null,
-            null
-        )
-        fallbackCursor?.use {
-            if (it.moveToFirst()) {
-                return it.getLong(0)
+        
+        // 3. Last fallback: any calendar at all
+        context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0)
             }
         }
-        return 1L // Default to 1 if no calendar found
+
+        android.util.Log.e("CalendarUtils", "No calendars found. Returning default ID 1.")
+        return 1L
     }
 
-    fun generateRRule(frequency: String, untilDate: LocalDate, selectedDays: Set<DayOfWeek>? = null): String {
-        val until = untilDate.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'235959'Z'"))
-        return when (frequency) {
-            "Daily" -> "FREQ=DAILY;UNTIL=$until"
-            "Weekly" -> {
-                val days = selectedDays?.map {
-                    it.getDisplayName(TextStyle.SHORT, Locale.getDefault()).uppercase()
-                }?.joinToString(",") ?: ""
-                "FREQ=WEEKLY;UNTIL=$until;BYDAY=$days"
-            }
-            "Monthly" -> "FREQ=MONTHLY;UNTIL=$until;BYMONTHDAY=${untilDate.dayOfMonth}"
-            else -> ""
+    fun generateRRule(frequency: String, untilDate: LocalDate? = null, interval: Int = 1, selectedDays: Set<DayOfWeek>? = null): String {
+        val freq = when (frequency) {
+            "Daily" -> "DAILY"
+            "Weekly" -> "WEEKLY"
+            "Monthly" -> "MONTHLY"
+            "Yearly" -> "YEARLY"
+            else -> "DAILY"
         }
+        
+        var rrule = "FREQ=$freq;INTERVAL=$interval"
+        
+        if (frequency == "Weekly" && selectedDays != null && selectedDays.isNotEmpty()) {
+            val days = selectedDays.joinToString(",") {
+                it.getDisplayName(TextStyle.SHORT, Locale.ENGLISH).uppercase().substring(0, 2)
+            }
+            rrule += ";BYDAY=$days"
+        }
+        
+        if (untilDate != null) {
+            val until = untilDate.format(DateTimeFormatter.ofPattern("yyyyMMdd'T'235959'Z'"))
+            rrule += ";UNTIL=$until"
+        }
+        
+        return rrule
     }
 }
 

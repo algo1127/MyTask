@@ -1,5 +1,10 @@
 package com.algo1127.mytask.ui.dialogs
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -35,7 +41,8 @@ fun AddEventDialog(
         startTime: String,
         endTime: String,
         location: String,
-        notes: String
+        notes: String,
+        repetition: RepetitionInfo?
     ) -> Unit
 ) {
     var title    by remember { mutableStateOf("") }
@@ -44,6 +51,7 @@ fun AddEventDialog(
     var selectedDate by remember { mutableStateOf(defaultDate) }
     var startTime by remember { mutableStateOf("09:00") }
     var endTime   by remember { mutableStateOf("10:00") }
+    var repetition by remember { mutableStateOf<RepetitionInfo?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -106,10 +114,17 @@ fun AddEventDialog(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                // Date selector (reuses the same pattern as AddTaskDialog)
+                // Date selector
                 EventDateSelector(
                     selectedDate = selectedDate,
                     onDateSelected = { selectedDate = it }
+                )
+                Spacer(Modifier.height(12.dp))
+
+                // Repetition
+                RepeatingSelector(
+                    onRepetitionChanged = { repetition = it },
+                    accentColor = Theme.Blue
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -142,9 +157,12 @@ fun AddEventDialog(
                     val e = parseTimeOrNull(endTime)
                     if (s != null && e != null && !e.isAfter(s)) "End time must be after start" else null
                 }
-                if (timeWarning != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(timeWarning, color = Color(0xFFFF6B6B), fontSize = 11.sp)
+                
+                AnimatedVisibility(visible = timeWarning != null) {
+                    Column {
+                        Spacer(Modifier.height(4.dp))
+                        Text(timeWarning ?: "", color = Color(0xFFFF6B6B), fontSize = 11.sp)
+                    }
                 }
             }
         },
@@ -158,7 +176,8 @@ fun AddEventDialog(
                             startTime,
                             endTime,
                             location.trim(),
-                            notes.trim()
+                            notes.trim(),
+                            repetition
                         )
                     }
                     onDismiss()

@@ -1,7 +1,7 @@
 package com.algo1127.mytask.ui
 
-import androidx.compose.animation.core.*
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,13 +31,14 @@ import java.time.LocalDate
 
 @Composable
 fun TasksTab(
-    tasks: List<TaskItem>,        // ✅ now receives tasks from DashboardScreen
+    tasks: List<TaskItem>,
     selectedDate: LocalDate,
-    completedTasks: MutableList<Long>,
-    onTaskCompleted: (Long) -> Unit
+    completedIds: Set<Long>,
+    onToggleCompletion: (Long, Boolean) -> Unit
 ) {
-    // ✅ Only show items that were created from the Tasks tab (isReminder == false)
-    val visibleTasks = tasks.filter { it.date == selectedDate && !it.isReminder }
+    val visibleTasks = remember(tasks, selectedDate) {
+        tasks.filter { it.date == selectedDate && !it.isReminder }
+    }
 
     if (visibleTasks.isEmpty()) {
         EmptyState(
@@ -49,17 +50,21 @@ fun TasksTab(
     } else {
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 100.dp)
         ) {
             items(visibleTasks, key = { it.id }) { item ->
-                val isCompleted = completedTasks.contains(item.id)
+                val isCompleted = completedIds.contains(item.id)
                 TaskRow(
                     item = item,
                     isCompleted = isCompleted,
-                    onToggle = { if (!isCompleted) onTaskCompleted(item.id) }
+                    onToggle = { onToggleCompletion(item.id, !isCompleted) },
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = tween(300),
+                        placementSpec = spring(stiffness = Spring.StiffnessLow)
+                    )
                 )
             }
-            item { Spacer(modifier = Modifier.height(100.dp)) }
         }
     }
 }
@@ -68,7 +73,8 @@ fun TasksTab(
 private fun TaskRow(
     item: TaskItem,
     isCompleted: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var isTapped by remember { mutableStateOf(false) }
     LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
@@ -80,7 +86,7 @@ private fun TaskRow(
     )
 
     Surface(
-        modifier = Modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
+        modifier = modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent
     ) {
@@ -97,7 +103,6 @@ private fun TaskRow(
                     isTapped = true; onToggle()
                 }
         ) {
-            // Left accent bar — purple for tasks
             Box(
                 modifier = Modifier
                     .width(3.dp).fillMaxHeight()
@@ -109,18 +114,19 @@ private fun TaskRow(
                 modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Checkbox-style icon bubble
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp))
                         .background(if (isCompleted) Theme.Purple.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
                 ) {
-                    Icon(
-                        imageVector = if (isCompleted) Icons.Default.TaskAlt else item.category.icon,
-                        contentDescription = null,
-                        tint = if (isCompleted) Theme.Purple else item.category.color,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    AnimatedContent(isCompleted, label = "iconAnim") { completed ->
+                        Icon(
+                            imageVector = if (completed) Icons.Default.TaskAlt else item.category.icon,
+                            contentDescription = null,
+                            tint = if (completed) Theme.Purple else item.category.color,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.width(13.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -145,8 +151,12 @@ private fun TaskRow(
                         Text(item.time, color = Theme.White60, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-                if (isCompleted) {
-                    Spacer(modifier = Modifier.width(10.dp))
+                
+                AnimatedVisibility(
+                    visible = isCompleted,
+                    enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                    exit = scaleOut() + fadeOut()
+                ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).clip(CircleShape).background(Theme.Purple)) {
                         Icon(Icons.Default.Check, null, tint = Theme.BgDeep, modifier = Modifier.size(16.dp))
                     }

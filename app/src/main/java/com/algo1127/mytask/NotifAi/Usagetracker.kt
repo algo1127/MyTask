@@ -27,9 +27,15 @@ data class UsageRecord(
     val event:          UsageEvent,
     val category:       TaskCategory,
     val taskId:         Long,
-    val hour:           Int,            // 0-23
-    val dayOfWeek:      Int,            // 1=Mon … 7=Sun
-    val responseTimeMs: Long = -1L      // ms between SENT and action; -1 if not applicable
+    val hour:           Int,
+    val dayOfWeek:      Int,
+    val responseTimeMs: Long = -1L,
+    // New — null until UsageAccessCollector has run at least once
+    val screenOnMinutes: Int = -1,
+    val unlockCount:     Int = -1,
+    val activeApp:       String = "",
+    val wasIdle:         Boolean = false,
+    val wasInFocusApp:   Boolean = false
 )
 
 // ─── Tracker ─────────────────────────────────────────────────────────────────
@@ -121,7 +127,13 @@ class UsageTracker(context: Context) {
                         taskId         = obj.getLong("tid"),
                         hour           = obj.getInt("h"),
                         dayOfWeek      = obj.getInt("dow"),
-                        responseTimeMs = obj.optLong("rt", -1L)
+                        responseTimeMs = obj.optLong("rt", -1L),
+                        screenOnMinutes = obj.optInt("som", -1),
+                        unlockCount     = obj.optInt("uc", -1),
+                        activeApp       = obj.optString("app", ""),
+                        wasIdle         = obj.optBoolean("idle", false),
+                        wasInFocusApp   = obj.optBoolean("focus", false)
+
                     )
                 } catch (e: Exception) { null }
             }
@@ -139,6 +151,12 @@ class UsageTracker(context: Context) {
                 put("h",   r.hour)
                 put("dow", r.dayOfWeek)
                 put("rt",  r.responseTimeMs)
+                put("som",   r.screenOnMinutes)
+                put("uc",    r.unlockCount)
+                put("app",   r.activeApp)
+                put("idle",  r.wasIdle)
+                put("focus", r.wasInFocusApp)
+
             })
         }
         prefs.edit().putString(KEY_RECORDS, arr.toString()).apply()
