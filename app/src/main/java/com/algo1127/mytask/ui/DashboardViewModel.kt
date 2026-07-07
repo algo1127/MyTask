@@ -40,6 +40,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState(isLoading = true))
 
+    val unscheduledTasks: StateFlow<List<com.algo1127.mytask.ui.models.Task>> = _refreshTrigger
+        .flatMapLatest { 
+            flow {
+                emit(database.taskDao().getAllTasks())
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val completedIds: StateFlow<Set<Long>> = _selectedDate
         .flatMapLatest { date ->
             completionDao.getRecordsForDate(date.toString())
@@ -69,6 +76,32 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 isDone = isDone
             )
             completionDao.insertOrUpdate(record)
+        }
+    }
+
+    fun updateTask(task: TaskItem) {
+        viewModelScope.launch {
+            val success = CalendarUtils.updateTaskInCalendar(getApplication(), task)
+            if (success) {
+                refresh()
+            }
+        }
+    }
+
+    fun scheduleTask(task: com.algo1127.mytask.ui.models.Task, date: LocalDate) {
+        viewModelScope.launch {
+            val taskItem = TaskItem(
+                title = task.title,
+                time = "09:00",
+                category = task.category,
+                date = date,
+                isReminder = false
+            )
+            val id = CalendarUtils.addTaskToCalendar(getApplication(), taskItem)
+            if (id != null) {
+                database.taskDao().deleteTask(task)
+                refresh()
+            }
         }
     }
 }

@@ -2,10 +2,13 @@ package com.algo1127.mytask.NotifAi.persistence
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.algo1127.mytask.data.MyTaskDatabase
 import com.algo1127.mytask.ui.models.*
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
+import com.google.gson.*
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -13,80 +16,170 @@ import java.time.format.DateTimeFormatter
 
 class Persistence(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("mytask_data", Context.MODE_PRIVATE)
+    private val database = MyTaskDatabase.getDatabase(context)
+    private val taskDao = database.taskDao()
+    private val reminderDao = database.reminderDao()
+    private val eventDao = database.eventDao()
+
     private val gson: Gson = GsonBuilder()
-        .registerTypeAdapter(LocalTime::class.java, object : com.google.gson.JsonSerializer<LocalTime>, com.google.gson.JsonDeserializer<LocalTime> {
+        .registerTypeAdapter(LocalTime::class.java, object : JsonSerializer<LocalTime>, JsonDeserializer<LocalTime> {
             private val fmt = DateTimeFormatter.ISO_LOCAL_TIME
-            override fun serialize(src: LocalTime, typeOfSrc: java.lang.reflect.Type, context: com.google.gson.JsonSerializationContext) =
-                com.google.gson.JsonPrimitive(src.format(fmt))
-            override fun deserialize(json: com.google.gson.JsonElement, typeOfT: java.lang.reflect.Type, context: com.google.gson.JsonDeserializationContext) =
-                LocalTime.parse(json.asString, fmt)
+            override fun serialize(src: LocalTime, typeOfSrc: java.lang.reflect.Type, context: JsonSerializationContext) =
+                JsonPrimitive(src.format(fmt))
+            override fun deserialize(json: JsonElement, typeOfT: java.lang.reflect.Type, context: JsonDeserializationContext) =
+                try { 
+                    if (json.isJsonPrimitive) LocalTime.parse(json.asString, fmt) 
+                    else LocalTime.NOON 
+                } catch (e: Exception) { LocalTime.NOON }
         })
-        .registerTypeAdapter(LocalDateTime::class.java, object : com.google.gson.JsonSerializer<LocalDateTime>, com.google.gson.JsonDeserializer<LocalDateTime> {
+        .registerTypeAdapter(LocalDate::class.java, object : JsonSerializer<LocalDate>, JsonDeserializer<LocalDate> {
+            private val fmt = DateTimeFormatter.ISO_LOCAL_DATE
+            override fun serialize(src: LocalDate, typeOfSrc: java.lang.reflect.Type, context: JsonSerializationContext) =
+                JsonPrimitive(src.format(fmt))
+            override fun deserialize(json: JsonElement, typeOfT: java.lang.reflect.Type, context: JsonDeserializationContext) =
+                try { 
+                    if (json.isJsonPrimitive) LocalDate.parse(json.asString, fmt) 
+                    else LocalDate.now() 
+                } catch (e: Exception) { LocalDate.now() }
+        })
+        .registerTypeAdapter(LocalDateTime::class.java, object : JsonSerializer<LocalDateTime>, JsonDeserializer<LocalDateTime> {
             private val fmt = DateTimeFormatter.ISO_LOCAL_DATE_TIME
-            override fun serialize(src: LocalDateTime, typeOfSrc: java.lang.reflect.Type, context: com.google.gson.JsonSerializationContext) =
-                com.google.gson.JsonPrimitive(src.format(fmt))
-            override fun deserialize(json: com.google.gson.JsonElement, typeOfT: java.lang.reflect.Type, context: com.google.gson.JsonDeserializationContext) =
-                LocalDateTime.parse(json.asString, fmt)
+            override fun serialize(src: LocalDateTime, typeOfSrc: java.lang.reflect.Type, context: JsonSerializationContext) =
+                JsonPrimitive(src.format(fmt))
+            override fun deserialize(json: JsonElement, typeOfT: java.lang.reflect.Type, context: JsonDeserializationContext) =
+                try { 
+                    if (json.isJsonPrimitive) LocalDateTime.parse(json.asString, fmt) 
+                    else LocalDateTime.now() 
+                } catch (e: Exception) { LocalDateTime.now() }
+        })
+        .registerTypeAdapter(Duration::class.java, object : JsonSerializer<Duration>, JsonDeserializer<Duration> {
+            override fun serialize(src: Duration, typeOfSrc: java.lang.reflect.Type, context: JsonSerializationContext) =
+                JsonPrimitive(src.toMillis())
+            override fun deserialize(json: JsonElement, typeOfT: java.lang.reflect.Type, context: JsonDeserializationContext) =
+                try { json.asLong.let { Duration.ofMillis(it) } } catch (e: Exception) { Duration.ZERO }
+        })
+        .registerTypeHierarchyAdapter(TimePreference::class.java, object : JsonSerializer<TimePreference>, JsonDeserializer<TimePreference> {
+            override fun serialize(src: TimePreference, typeOfSrc: java.lang.reflect.Type, context: JsonSerializationContext): JsonElement {
+                val obj = JsonObject()
+                when (src) {
+                    is TimePreference.Fixed -> {
+                        obj.addProperty("type", "Fixed")
+                        obj.addProperty("time", src.time.format(DateTimeFormatter.ISO_LOCAL_TIME))
+                    }
+                    is TimePreference.LaterToday -> obj.addProperty("type", "LaterToday")
+                    is TimePreference.Tomorrow -> obj.addProperty("type", "Tomorrow")
+                    is TimePreference.Window -> {
+                        obj.addProperty("type", "Window")
+                        obj.addProperty("startHour", src.startHour)
+                        obj.addProperty("endHour", src.endHour)
+                    }
+                    is TimePreference.AiDecide -> obj.addProperty("type", "AiDecide")
+                }
+                return obj
+            }
+
+            override fun deserialize(json: JsonElement, typeOfT: java.lang.reflect.Type, context: JsonDeserializationContext): TimePreference {
+                return try {
+                    if (json.isJsonObject) {
+                        val obj = json.asJsonObject
+                        when (obj.get("type")?.asString) {
+                            "Fixed" -> TimePreference.Fixed(LocalTime.parse(obj.get("time").asString, DateTimeFormatter.ISO_LOCAL_TIME))
+                            "LaterToday" -> TimePreference.LaterToday
+                            "Tomorrow" -> TimePreference.Tomorrow
+                            "Window" -> TimePreference.Window(obj.get("startHour").asInt, obj.get("endHour").asInt)
+                            "AiDecide" -> TimePreference.AiDecide
+                            else -> TimePreference.Fixed(LocalTime.NOON)
+                        }
+                    } else {
+                        // Legacy string format
+                        val value = json.asString
+                        when {
+                            value.startsWith("FIXED:") -> TimePreference.Fixed(LocalTime.parse(value.removePrefix("FIXED:"), DateTimeFormatter.ISO_LOCAL_TIME))
+                            value == "LATER_TODAY" -> TimePreference.LaterToday
+                            value == "TOMORROW" -> TimePreference.Tomorrow
+                            value.startsWith("WINDOW:") -> {
+                                val parts = value.removePrefix("WINDOW:").split(":")
+                                TimePreference.Window(parts[0].toInt(), parts[1].toInt())
+                            }
+                            value == "AI_DECIDE" -> TimePreference.AiDecide
+                            else -> TimePreference.Fixed(LocalTime.NOON)
+                        }
+                    }
+                } catch (e: Exception) {
+                    TimePreference.Fixed(LocalTime.NOON)
+                }
+            }
         })
         .create()
 
-    // ==================== TASKS ====================
-    fun saveTask(task: Task) {
-        val tasks = getTasks().toMutableList()
-        val idx = tasks.indexOfFirst { it.id == task.id }
-        if (idx >= 0) tasks[idx] = task else tasks.add(task)
-        prefs.edit().putString("tasks", gson.toJson(tasks)).apply()
-    }
+    suspend fun migrateIfNecessary() = withContext(Dispatchers.IO) {
+        if (!prefs.getBoolean("room_migrated", false)) {
+            // Migrate Tasks
+            val tasksJson = prefs.getString("tasks", null)
+            if (!tasksJson.isNullOrEmpty()) {
+                try {
+                    val tasks: List<Task> = gson.fromJson(tasksJson, object : TypeToken<List<Task>>(){}.type)
+                    tasks.forEach { taskDao.insertTask(it) }
+                } catch (e: Exception) {
+                    android.util.Log.e("Persistence", "Failed to migrate tasks", e)
+                }
+            }
 
-    fun getTasks(): List<Task> {
-        return try {
-            val json = prefs.getString("tasks", null)
-            if (json.isNullOrEmpty()) emptyList() else
-                gson.fromJson(json, object : TypeToken<List<Task>>(){}.type)
-        } catch (e: Exception) {
-            emptyList()
+            // Migrate Reminders
+            val remindersJson = prefs.getString("reminders", null)
+            if (!remindersJson.isNullOrEmpty()) {
+                try {
+                    val reminders: List<ReminderItem> = gson.fromJson(remindersJson, object : TypeToken<List<ReminderItem>>(){}.type)
+                    reminders.forEach { reminderDao.insertReminder(it) }
+                } catch (e: Exception) {
+                    android.util.Log.e("Persistence", "Failed to migrate reminders", e)
+                }
+            }
+
+            // Migrate Events
+            val eventsJson = prefs.getString("events", null)
+            if (!eventsJson.isNullOrEmpty()) {
+                try {
+                    val events: List<EventItem> = gson.fromJson(eventsJson, object : TypeToken<List<EventItem>>(){}.type)
+                    events.forEach { eventDao.insertEvent(it) }
+                } catch (e: Exception) {
+                    android.util.Log.e("Persistence", "Failed to migrate events", e)
+                }
+            }
+
+            prefs.edit().putBoolean("room_migrated", true).apply()
         }
     }
 
-    fun deleteTask(taskId: Long) {
-        val tasks = getTasks().filter { it.id != taskId }
-        prefs.edit().putString("tasks", gson.toJson(tasks)).apply()
+    // ==================== TASKS ====================
+    suspend fun saveTask(task: Task) = withContext(Dispatchers.IO) {
+        taskDao.insertTask(task)
+    }
+
+    suspend fun getTasks(): List<Task> = withContext(Dispatchers.IO) {
+        taskDao.getAllTasks()
+    }
+
+    suspend fun deleteTask(taskId: Long) = withContext(Dispatchers.IO) {
+        taskDao.deleteTaskById(taskId)
     }
 
     // ==================== REMINDERS ====================
-    fun saveReminder(reminder: ReminderItem) {
-        val reminders = getReminders().toMutableList()
-        val idx = reminders.indexOfFirst { it.id == reminder.id }
-        if (idx >= 0) reminders[idx] = reminder else reminders.add(reminder)
-        prefs.edit().putString("reminders", gson.toJson(reminders)).apply()
+    suspend fun saveReminder(reminder: ReminderItem) = withContext(Dispatchers.IO) {
+        reminderDao.insertReminder(reminder)
     }
 
-    fun getReminders(): List<ReminderItem> {
-        return try {
-            val json = prefs.getString("reminders", null)
-            if (json.isNullOrEmpty()) emptyList() else
-                gson.fromJson(json, object : TypeToken<List<ReminderItem>>(){}.type)
-        } catch (e: Exception) {
-            emptyList()
-        }
+    suspend fun getReminders(): List<ReminderItem> = withContext(Dispatchers.IO) {
+        reminderDao.getAllReminders()
     }
 
     // ==================== EVENTS ====================
-    fun saveEvent(event: EventItem) {
-        val events = getEvents().toMutableList()
-        val idx = events.indexOfFirst { it.id == event.id }
-        if (idx >= 0) events[idx] = event else events.add(event)
-        prefs.edit().putString("events", gson.toJson(events)).apply()
+    suspend fun saveEvent(event: EventItem) = withContext(Dispatchers.IO) {
+        eventDao.insertEvent(event)
     }
 
-    fun getEvents(): List<EventItem> {
-        return try {
-            val json = prefs.getString("events", null)
-            if (json.isNullOrEmpty()) emptyList() else
-                gson.fromJson(json, object : TypeToken<List<EventItem>>(){}.type)
-        } catch (e: Exception) {
-            emptyList()
-        }
+    suspend fun getEvents(): List<EventItem> = withContext(Dispatchers.IO) {
+        eventDao.getAllEvents()
     }
 
     // ==================== AI STATE (Transferable ✅) ====================
@@ -134,5 +227,6 @@ class Persistence(private val context: Context) {
 
     fun clearAllData() {
         prefs.edit().clear().apply()
+        // Note: This doesn't clear Room database, but we might want to for a full clear
     }
 }

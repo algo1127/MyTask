@@ -61,6 +61,8 @@ class CalendarReader(private val context: Context) {
 
                 val isTask = description.contains("TYPE:TASK")
                 val isReminder = description.contains("TYPE:REMINDER")
+                val isUrgent = description.contains("URGENT:TRUE")
+                val isImportant = description.contains("IMPORTANT:TRUE")
 
                 if (isTask || isReminder) {
                     val category = extractCategory(description)
@@ -71,7 +73,9 @@ class CalendarReader(private val context: Context) {
                             category = category,
                             date = date,
                             isReminder = isReminder,
-                            id = eventId // ✅ Use real Event ID
+                            id = eventId,
+                            isUrgent = isUrgent,
+                            isImportant = isImportant
                         )
                     )
                 } else {

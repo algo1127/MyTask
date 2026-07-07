@@ -183,6 +183,7 @@ fun DashboardScreen(
     val calendarEvents = uiState.events
 
     val completedIds by viewModel.completedIds.collectAsState()
+    val unscheduledTasks by viewModel.unscheduledTasks.collectAsState()
 
     // Pull-to-refresh
     val pullRefreshState = rememberPullRefreshState(
@@ -258,6 +259,11 @@ fun DashboardScreen(
                     .windowInsetsPadding(WindowInsets.statusBars),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+                TaskSidebar(
+                    unscheduledTasks = unscheduledTasks,
+                    onAddTask = { addTaskSource = 1; showAddTaskDialog = true },
+                    onDragTask = { /* Dragging logic if needed */ }
+                )
                 Column(modifier = Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
                     ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, delayMillis = 100)
@@ -276,7 +282,17 @@ fun DashboardScreen(
                     TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
-                        PageContent(page = page, isLoading = isLoading, calendarTasks = calendarTasks, calendarEvents = calendarEvents, selectedDate = selectedDate, notifAi = notifAi, completedIds = completedIds, onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) })
+                        PageContent(
+                            page = page,
+                            isLoading = isLoading,
+                            calendarTasks = calendarTasks,
+                            calendarEvents = calendarEvents,
+                            selectedDate = selectedDate,
+                            notifAi = notifAi,
+                            completedIds = completedIds,
+                            onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) },
+                            onTaskUpdate = { viewModel.updateTask(it) }
+                        )
                     }
                 }
             }
@@ -300,7 +316,17 @@ fun DashboardScreen(
                 TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
-                    PageContent(page = page, isLoading = isLoading, calendarTasks = calendarTasks, calendarEvents = calendarEvents, selectedDate = selectedDate, notifAi = notifAi, completedIds = completedIds, onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) })
+                    PageContent(
+                        page = page,
+                        isLoading = isLoading,
+                        calendarTasks = calendarTasks,
+                        calendarEvents = calendarEvents,
+                        selectedDate = selectedDate,
+                        notifAi = notifAi,
+                        completedIds = completedIds,
+                        onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) },
+                        onTaskUpdate = { viewModel.updateTask(it) }
+                    )
                 }
             }
         }
@@ -558,7 +584,7 @@ private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, cal
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-private fun PageContent(page: Int, isLoading: Boolean, calendarTasks: List<TaskItem>, calendarEvents: List<EventItem>, selectedDate: LocalDate, notifAi: Any, completedIds: Set<Long>, onToggleCompletion: (Long, Boolean) -> Unit) {
+private fun PageContent(page: Int, isLoading: Boolean, calendarTasks: List<TaskItem>, calendarEvents: List<EventItem>, selectedDate: LocalDate, notifAi: Any, completedIds: Set<Long>, onToggleCompletion: (Long, Boolean) -> Unit, onTaskUpdate: (TaskItem) -> Unit) {
     AnimatedContent(
         targetState = page, 
         transitionSpec = {
@@ -578,7 +604,7 @@ private fun PageContent(page: Int, isLoading: Boolean, calendarTasks: List<TaskI
             } else {
                 when (targetPage) {
                     0 -> if (calendarTasks.none { it.isReminder }) EmptyState("No reminders for this day", Icons.Outlined.Schedule) else RemindersTab(tasks = calendarTasks, selectedDate = selectedDate, notifAi = notifAi as com.algo1127.mytask.NotifAi.NotifAi, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
-                    1 -> if (calendarTasks.none { !it.isReminder }) EmptyState("No tasks for this day", Icons.Default.Task) else TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
+                    1 -> TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskUpdate = onTaskUpdate)
                     2 -> if (calendarEvents.isEmpty()) EmptyState("No events for this day", Icons.Outlined.Event) else EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
                     else -> Box(modifier = Modifier.fillMaxSize())
                 }

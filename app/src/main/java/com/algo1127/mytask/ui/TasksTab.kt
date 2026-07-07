@@ -11,7 +11,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Task
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,41 +31,105 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksTab(
     tasks: List<TaskItem>,
     selectedDate: LocalDate,
     completedIds: Set<Long>,
-    onToggleCompletion: (Long, Boolean) -> Unit
+    onToggleCompletion: (Long, Boolean) -> Unit,
+    onTaskUpdate: (TaskItem) -> Unit = {}
 ) {
+    var isGridView by remember { mutableStateOf(false) }
+
     val visibleTasks = remember(tasks, selectedDate) {
         tasks.filter { it.date == selectedDate && !it.isReminder }
     }
 
-    if (visibleTasks.isEmpty()) {
-        EmptyState(
-            icon = Icons.Outlined.Task,
-            title = "No tasks",
-            subtitle = "Tap + to add a task",
-            color = Theme.Purple
-        )
-    } else {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 100.dp)
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            items(visibleTasks, key = { it.id }) { item ->
-                val isCompleted = completedIds.contains(item.id)
-                TaskRow(
-                    item = item,
-                    isCompleted = isCompleted,
-                    onToggle = { onToggleCompletion(item.id, !isCompleted) },
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(300),
-                        placementSpec = spring(stiffness = Spring.StiffnessLow)
-                    )
+            IconButton(onClick = { isGridView = !isGridView }) {
+                Icon(
+                    if (isGridView) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                    contentDescription = "Toggle View",
+                    tint = Theme.White60
                 )
+            }
+        }
+
+        if (isGridView) {
+            EisenhowerGrid(
+                tasks = visibleTasks,
+                onTaskUpdate = onTaskUpdate,
+                onToggleCompletion = onToggleCompletion,
+                completedIds = completedIds
+            )
+        } else if (visibleTasks.isEmpty()) {
+            EmptyState(
+                icon = Icons.Outlined.Task,
+                title = "No tasks",
+                subtitle = "Tap + to add a task",
+                color = Theme.Purple
+            )
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 100.dp)
+            ) {
+                items(visibleTasks, key = { it.id }) { item ->
+                    val isCompleted = completedIds.contains(item.id)
+                    
+                    val swipeState = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { value ->
+                            when (value) {
+                                SwipeToDismissBoxValue.EndToStart -> {
+                                    onTaskUpdate(item.copy(date = item.date.plusDays(1)))
+                                    true
+                                }
+                                SwipeToDismissBoxValue.StartToEnd -> {
+                                    onToggleCompletion(item.id, !isCompleted)
+                                    false
+                                }
+                                else -> false
+                            }
+                        }
+                    )
+
+                    SwipeToDismissBox(
+                        state = swipeState,
+                        backgroundContent = {
+                            val direction = swipeState.dismissDirection
+                            val color = when (direction) {
+                                SwipeToDismissBoxValue.StartToEnd -> Theme.Teal
+                                SwipeToDismissBoxValue.EndToStart -> Theme.Gold
+                                else -> Color.Transparent
+                            }
+                            Box(
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(color),
+                                contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
+                            ) {
+                                val icon = if (direction == SwipeToDismissBoxValue.StartToEnd) Icons.Default.Check else Icons.Default.Schedule
+                                Icon(icon, null, tint = Theme.BgDeep, modifier = Modifier.padding(horizontal = 20.dp))
+                            }
+                        },
+                        content = {
+                            TaskRow(
+                                item = item,
+                                isCompleted = isCompleted,
+                                onToggle = { onToggleCompletion(item.id, !isCompleted) },
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = tween(300),
+                                    placementSpec = spring(stiffness = Spring.StiffnessLow)
+                                )
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -121,7 +187,7 @@ private fun TaskRow(
                 ) {
                     AnimatedContent(isCompleted, label = "iconAnim") { completed ->
                         Icon(
-                            imageVector = if (completed) Icons.Default.TaskAlt else item.category.icon,
+                            imageVector = if (completed) Icons.Default.CheckCircle else item.category.icon,
                             contentDescription = null,
                             tint = if (completed) Theme.Purple else item.category.color,
                             modifier = Modifier.size(24.dp)

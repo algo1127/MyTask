@@ -40,7 +40,7 @@ class LearningEngine(context: Context) {
      * Returns the best [LocalTime] to notify for a given category.
      * This is what AddTaskDialog calls for "AI Decide."
      *
-     * Uses real usage data if available; falls back to category default.
+     * Uses real usage data (including seeded baseline) if available.
      */
     fun getBestTime(
         category:  TaskCategory,
@@ -48,8 +48,7 @@ class LearningEngine(context: Context) {
     ): LocalTime {
         val records = tracker.getAll()
 
-        // Not enough data yet — use cold-start defaults
-        if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) {
+        if (records.isEmpty()) {
             val defaultHour = coldStartHour[category] ?: 10
             val clamped = if (defaultHour <= afterHour) afterHour + 1 else defaultHour
             return LocalTime.of(clamped.coerceAtMost(22), 0)

@@ -2,6 +2,8 @@ package com.algo1127.mytask.ui.models
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -12,8 +14,9 @@ enum class Priority { Low, Medium, High, Critical }
 enum class FocusState { Active, Paused, Archived }
 enum class VerificationStatus { Pending, Verified, Flagged }
 
+@Entity(tableName = "tasks")
 data class Task(
-    val id: Long = System.nanoTime(),
+    @PrimaryKey val id: Long = System.nanoTime(),
     val title: String,
     val description: String = "",
     val startDate: LocalDate,
@@ -45,21 +48,23 @@ sealed class TimePreference {
 }
 
 // ==================== EXISTING SYSTEMS (Renamed for clarity) ====================
+@Entity(tableName = "reminders")
 data class ReminderItem(
     val title: String,
     val time: String,
     val category: com.algo1127.mytask.ui.TaskCategory, // ✅ Use existing
     val date: LocalDate,
-    val id: Long = System.nanoTime(),
+    @PrimaryKey val id: Long = System.nanoTime(),
     val done: Boolean = false
 )
 
+@Entity(tableName = "events")
 data class EventItem(
     val title: String,
     val startTime: String,
     val endTime: String,
     val location: String,
     val date: LocalDate,
-    val id: Long = System.nanoTime()
+    @PrimaryKey val id: Long = System.nanoTime()
 )
 // ✅ REMOVED: TaskCategory enum (use the one in ui/ package)

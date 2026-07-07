@@ -67,6 +67,13 @@ fun AddTaskDialog(
     var showBatchAdd     by remember { mutableStateOf(false) }
     val itemsToAdd       = remember { mutableStateListOf<QueuedItem>() }
 
+    fun updateFixedTime(time: LocalTime) {
+        val hStr = String.format(Locale.US, "%02d", time.hour)
+        val mStr = String.format(Locale.US, "%02d", time.minute)
+        fixedTime = "$hStr:$mStr"
+        timeError = null
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor   = Theme.CardBg,
@@ -154,15 +161,37 @@ fun AddTaskDialog(
                 Spacer(Modifier.height(8.dp))
                 TimePreferenceSelector(
                     selected         = timePreference,
-                    onSelected       = { timePreference = it },
+                    onSelected       = { 
+                        timePreference = it
+                        when (it) {
+                            TimePreference.LaterToday -> {
+                                selectedDate = LocalDate.now()
+                                updateFixedTime(notifAi.resolveLaterToday(selectedCategory))
+                            }
+                            TimePreference.Tomorrow -> {
+                                selectedDate = LocalDate.now().plusDays(1)
+                                updateFixedTime(notifAi.resolveTomorrow(selectedCategory))
+                            }
+                            is TimePreference.Fixed -> {
+                                // Keep current date, update string
+                                updateFixedTime(it.time)
+                            }
+                            else -> {}
+                        }
+                    },
                     fixedTime        = fixedTime,
                     onTimeChanged    = {
                         fixedTime  = it
                         timeError  = validateTime(it)
+                        // Sync preference if manually changed
+                        try {
+                            timePreference = TimePreference.Fixed(LocalTime.parse(it))
+                        } catch (_: Exception) {}
                     },
                     accentColor      = accentColor,
                     selectedCategory = selectedCategory,
-                    notifAi          = notifAi
+                    notifAi          = notifAi,
+                    onDateUpdate     = { selectedDate = it }
                 )
 
                 // ── Batch toggle ───────────────────────────────────────────
@@ -531,7 +560,8 @@ private fun TimePreferenceSelector(
     onTimeChanged:    (String) -> Unit,
     accentColor:      Color,
     selectedCategory: TaskCategory,
-    notifAi:          NotifAi
+    notifAi:          NotifAi,
+    onDateUpdate:     (LocalDate) -> Unit
 ) {
     val parsedTime = try { LocalTime.parse(fixedTime) } catch (_: Exception) { LocalTime.of(14, 30) }
     val initHour = parsedTime.hour
@@ -564,17 +594,28 @@ private fun TimePreferenceSelector(
             }
             Surface(
                 onClick = {
-                    if (pref is TimePreference.AiDecide) {
-                        // Resolve AI suggestion immediately to a real Fixed time
-                        val suggested = notifAi.suggestTime(selectedCategory)
-                        onSelected(suggested)
-                        val hVal = suggested.time.hour
-                        val mVal = suggested.time.minute
-                        val hStr = if (hVal < 10) "0$hVal" else hVal.toString()
-                        val mStr = if (mVal < 10) "0$mVal" else mVal.toString()
-                        onTimeChanged("$hStr:$mStr")
-                    } else {
-                        onSelected(pref)
+                    when (pref) {
+                        is TimePreference.AiDecide -> {
+                            // Resolve AI suggestion immediately to a real Fixed time
+                            val suggested = notifAi.suggestTime(selectedCategory)
+                            onSelected(suggested)
+                            val hVal = suggested.time.hour
+                            val mVal = suggested.time.minute
+                            val hStr = String.format(Locale.US, "%02d", hVal)
+                            val mStr = String.format(Locale.US, "%02d", mVal)
+                            onTimeChanged("$hStr:$mStr")
+                        }
+                        TimePreference.LaterToday -> {
+                            onDateUpdate(LocalDate.now())
+                            onSelected(pref)
+                        }
+                        TimePreference.Tomorrow -> {
+                            onDateUpdate(LocalDate.now().plusDays(1))
+                            onSelected(pref)
+                        }
+                        else -> {
+                            onSelected(pref)
+                        }
                     }
                 },
                 shape    = RoundedCornerShape(10.dp),

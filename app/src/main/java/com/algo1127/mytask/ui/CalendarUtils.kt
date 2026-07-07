@@ -34,7 +34,10 @@ object CalendarUtils {
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
 
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
-                put(CalendarContract.Events.DESCRIPTION, "Category: ${task.category.label}||TYPE:$typeMarker")
+                var description = "Category: ${task.category.label}||TYPE:$typeMarker"
+                if (task.isUrgent) description += "||URGENT:TRUE"
+                if (task.isImportant) description += "||IMPORTANT:TRUE"
+                put(CalendarContract.Events.DESCRIPTION, description)
 
                 put(CalendarContract.Events.HAS_ALARM, 1)
                 if (rrule != null) {
@@ -99,6 +102,33 @@ object CalendarUtils {
         } catch (e: Exception) {
             android.util.Log.e("CalendarUtils", "Error adding event to calendar: ${e.message}", e)
             null
+        }
+    }
+
+    fun updateTaskInCalendar(context: Context, task: TaskItem): Boolean {
+        return try {
+            val time = LocalTime.parse(task.time)
+            val dateTime = LocalDateTime.of(task.date, time)
+            val startMillis = dateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+            val values = ContentValues().apply {
+                put(CalendarContract.Events.TITLE, task.title)
+                put(CalendarContract.Events.DTSTART, startMillis)
+                put(CalendarContract.Events.DTEND, startMillis + 30 * 60 * 1000)
+                
+                val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
+                var description = "Category: ${task.category.label}||TYPE:$typeMarker"
+                if (task.isUrgent) description += "||URGENT:TRUE"
+                if (task.isImportant) description += "||IMPORTANT:TRUE"
+                put(CalendarContract.Events.DESCRIPTION, description)
+            }
+
+            val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, task.id)
+            val rows = context.contentResolver.update(uri, values, null, null)
+            rows > 0
+        } catch (e: Exception) {
+            android.util.Log.e("CalendarUtils", "Error updating task: ${e.message}")
+            false
         }
     }
 

@@ -18,7 +18,6 @@ class DailySummaryWorker(
         val tomorrow = LocalDate.now().plusDays(1)
 
         // Pull tomorrow's events from persistence
-        // You'll need to add getEvents() to your Persistence class (see note below)
         val events = try {
             Persistence(context).getEvents()
                 .filter { it.date == tomorrow }

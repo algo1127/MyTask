@@ -7,14 +7,15 @@ import androidx.compose.material.icons.filled.*
 import java.time.LocalDate
 
 data class TaskItem(
-     val title: String,
-     val time: String,
+    val title: String,
+    val time: String,
     val category: TaskCategory,
-     val date: LocalDate,
-     val isReminder: Boolean = false,  // ← ADD THIS
+    val date: LocalDate,
+    val isReminder: Boolean = false,
     val id: Long = System.nanoTime(),
-    val done: Boolean = false
-
+    val done: Boolean = false,
+    val isUrgent: Boolean = false,
+    val isImportant: Boolean = false
 )
 
 data class EventItem(

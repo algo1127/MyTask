@@ -49,6 +49,17 @@ class UsageTracker(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("usage_tracker", Context.MODE_PRIVATE)
 
+    init {
+        seedIfEmpty()
+    }
+
+    private fun seedIfEmpty() {
+        if (load().isEmpty()) {
+            android.util.Log.d("UsageTracker", "Seeding initial AI data patterns...")
+            save(SeedData.getPresetRecords())
+        }
+    }
+
     companion object {
         private const val KEY_RECORDS   = "records"
         private const val MAX_RECORDS   = 800   // ~3-6 months of normal use

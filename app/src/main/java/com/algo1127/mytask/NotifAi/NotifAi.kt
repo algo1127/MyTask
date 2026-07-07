@@ -32,6 +32,7 @@ class NotifAi(private val context: Context) {
 
     init {
         scope.launch {
+            persistence.migrateIfNecessary()
             val state  = persistence.getAiState()
             trustScore = state.first
             aiPreferences = state.second.toMutableMap()
@@ -50,6 +51,23 @@ class NotifAi(private val context: Context) {
     fun suggestTime(category: TaskCategory): TimePreference.Fixed {
         val best = learningEngine.getBestTime(category)
         return TimePreference.Fixed(best)
+    }
+
+    /**
+     * Finds the next best engagement slot for today.
+     */
+    fun resolveLaterToday(category: TaskCategory): LocalTime {
+        val now = LocalTime.now()
+        // Try to find the best time after the current hour
+        return learningEngine.getBestTime(category, afterHour = now.hour)
+    }
+
+    /**
+     * Finds the best engagement slot for tomorrow.
+     */
+    fun resolveTomorrow(category: TaskCategory): LocalTime {
+        // Find best time starting from the beginning of the day
+        return learningEngine.getBestTime(category, afterHour = -1)
     }
 
     // ── Notification sending ──────────────────────────────────────────
