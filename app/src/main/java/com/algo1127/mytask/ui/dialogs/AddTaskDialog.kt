@@ -38,6 +38,7 @@ import java.util.Locale
 fun AddTaskDialog(
     defaultDate: LocalDate,
     sourceTab: Int = 1,          // 0 = Reminders (teal), 1 = Tasks (purple)
+    taskToEdit: TaskItem? = null,
     onDismiss: () -> Unit,
     onAdd: (
         title: String,
@@ -46,23 +47,32 @@ fun AddTaskDialog(
         date: LocalDate,
         description: String?,
         repetition: RepetitionInfo?,
-    ) -> Unit
+    ) -> Unit,
+    onEdit: ((TaskItem) -> Unit)? = null
 ) {
     val accentColor  = if (sourceTab == 0) Theme.Teal else Theme.Purple
-    val dialogTitle  = if (sourceTab == 0) "Add Reminder" else "Add Task"
+    val isEditMode   = taskToEdit != null
+    val dialogTitle  = if (isEditMode) "Edit ${if (sourceTab == 0) "Reminder" else "Task"}" else if (sourceTab == 0) "Add Reminder" else "Add Task"
     val dialogIcon: ImageVector =
         if (sourceTab == 0) Icons.Outlined.Schedule else Icons.Default.Task
 
     val context = LocalContext.current
     val notifAi = remember { NotifAi(context) }
 
-    var title            by remember { mutableStateOf("") }
-    var description      by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf(TaskCategory.Study) }
-    var selectedDate     by remember { mutableStateOf(defaultDate) }
-    var timePreference   by remember { mutableStateOf<TimePreference>(TimePreference.LaterToday) }
+    var title            by remember { mutableStateOf(taskToEdit?.title ?: "") }
+    var description      by remember { mutableStateOf("") } // TaskItem currently doesn't have description, but model does. 
+                                                           // For now we use local state.
+    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: TaskCategory.Study) }
+    var selectedDate     by remember { mutableStateOf(taskToEdit?.date ?: defaultDate) }
+    var timePreference   by remember { 
+        mutableStateOf<TimePreference>(
+            taskToEdit?.let { 
+                try { TimePreference.Fixed(LocalTime.parse(it.time)) } catch(_: Exception) { TimePreference.LaterToday }
+            } ?: TimePreference.LaterToday
+        ) 
+    }
     var selectedRepetition by remember { mutableStateOf<RepetitionInfo?>(null) }
-    var fixedTime        by remember { mutableStateOf("14:30") }
+    var fixedTime        by remember { mutableStateOf(taskToEdit?.time ?: "14:30") }
     var timeError        by remember { mutableStateOf<String?>(null) }
     var showBatchAdd     by remember { mutableStateOf(false) }
     val itemsToAdd       = remember { mutableStateListOf<QueuedItem>() }
@@ -145,11 +155,13 @@ fun AddTaskDialog(
                 Spacer(Modifier.height(12.dp))
 
                 // ── Repetition ─────────────────────────────────────────────
-                RepeatingSelector(
-                    onRepetitionChanged = { selectedRepetition = it },
-                    accentColor = accentColor
-                )
-                Spacer(Modifier.height(12.dp))
+                if (!isEditMode) {
+                    RepeatingSelector(
+                        onRepetitionChanged = { selectedRepetition = it },
+                        accentColor = accentColor
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
 
                 // ── Time preference ────────────────────────────────────────
                 Text(
@@ -195,17 +207,19 @@ fun AddTaskDialog(
                 )
 
                 // ── Batch toggle ───────────────────────────────────────────
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier          = Modifier.clickable { showBatchAdd = !showBatchAdd }
-                ) {
-                    Checkbox(
-                        checked         = showBatchAdd,
-                        onCheckedChange = { showBatchAdd = it },
-                        colors          = CheckboxDefaults.colors(checkedColor = accentColor)
-                    )
-                    Text("Add multiple items", color = Theme.White60, fontSize = 13.sp)
+                if (!isEditMode) {
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier          = Modifier.clickable { showBatchAdd = !showBatchAdd }
+                    ) {
+                        Checkbox(
+                            checked         = showBatchAdd,
+                            onCheckedChange = { showBatchAdd = it },
+                            colors          = CheckboxDefaults.colors(checkedColor = accentColor)
+                        )
+                        Text("Add multiple items", color = Theme.White60, fontSize = 13.sp)
+                    }
                 }
 
                 // ── Batch preview ──────────────────────────────────────────
@@ -263,7 +277,16 @@ fun AddTaskDialog(
 
                 TextButton(
                     onClick = {
-                        if (showBatchAdd && itemsToAdd.isNotEmpty()) {
+                        if (isEditMode && taskToEdit != null && onEdit != null) {
+                            onEdit(
+                                taskToEdit.copy(
+                                    title = title.trim(),
+                                    time = fixedTime,
+                                    category = selectedCategory,
+                                    date = selectedDate
+                                )
+                            )
+                        } else if (showBatchAdd && itemsToAdd.isNotEmpty()) {
                             for (item in itemsToAdd) {
                                 onAdd(
                                     item.title,
@@ -294,7 +317,7 @@ fun AddTaskDialog(
                             (timePreference !is TimePreference.Fixed || (timeError == null)))
                 ) {
                     Text(
-                        if (showBatchAdd) "Add All" else "Add",
+                        if (isEditMode) "Save" else if (showBatchAdd) "Add All" else "Add",
                         color      = accentColor,
                         fontWeight = FontWeight.SemiBold
                     )

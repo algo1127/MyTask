@@ -7,6 +7,7 @@ import android.os.VibratorManager
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,11 +43,17 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -193,9 +200,14 @@ fun DashboardScreen(
 
     // Dialog state
     var showAddTaskDialog by remember { mutableStateOf(false) }
+    var taskToEdit by remember { mutableStateOf<TaskItem?>(null) }
     var addTaskSource by remember { mutableIntStateOf(1) }
     var showAddEventDialog by remember { mutableStateOf(false) }
+    var showAddCountdownDialog by remember { mutableStateOf(false) }
+    var eventToEdit by remember { mutableStateOf<EventItem?>(null) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+
+    var isFabExpanded by remember { mutableStateOf(false) }
 
     var calendarIsGrid by remember { mutableStateOf(false) }
     var gridMonthOffset by remember { mutableLongStateOf(0L) }
@@ -224,6 +236,31 @@ fun DashboardScreen(
     // Safe bottom inset for FAB
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+    // --- NESTED SCROLL LOGIC ---
+    val density = LocalDensity.current
+    
+    // Dynamic height based on calendar state
+    val headerHeightBaseDp = if (calendarIsGrid) 520.dp else 350.dp
+    val headerHeightPx = with(density) { headerHeightBaseDp.toPx() }
+    
+    var headerOffsetHeightPx by remember { mutableStateOf(0f) }
+
+    // Reset offset when toggling grid to avoid jumping
+    LaunchedEffect(calendarIsGrid) {
+        headerOffsetHeightPx = 0f
+    }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                val newOffset = headerOffsetHeightPx + delta
+                headerOffsetHeightPx = newOffset.coerceIn(-headerHeightPx, 0f)
+                return Offset.Zero
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -234,6 +271,7 @@ fun DashboardScreen(
                 )
             )
             .pullRefresh(pullRefreshState)
+            .nestedScroll(nestedScrollConnection)
     ) {
         // Ambient glow orbs
         Box(
@@ -298,24 +336,66 @@ fun DashboardScreen(
             }
         } else {
             // ==================== COMPACT LAYOUT ====================
-            Column(modifier = Modifier.fillMaxSize().padding(horizontal = hPad).padding(top = 16.dp).windowInsetsPadding(WindowInsets.statusBars)) {
-                DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
-                ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, delayMillis = 100)
-                Spacer(modifier = Modifier.height(18.dp))
-                MiniCalendar(
-                    visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(),
-                    onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) },
-                    calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L },
-                    gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it },
-                    calendarRowState = calendarRowState, visibleRowDate = visibleRowDate,
-                    calendarTasks = calendarTasks, calendarEvents = calendarEvents,
-                    infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, dayWidth = dayWidth,
-                    delayMillis = 200
-                )
-                Spacer(modifier = Modifier.height(20.dp))
-                TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
+            Box(modifier = Modifier.fillMaxSize()) {
+                // The scrolling header parts
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset { IntOffset(0, headerOffsetHeightPx.toInt()) }
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Theme.BgDeep, Theme.BgMid),
+                                startY = 0f, endY = with(density) { (headerHeightBaseDp + 100.dp).toPx() }
+                            )
+                        )
+                        .padding(horizontal = hPad)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(top = 16.dp)
+                ) {
+                    DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
+                    ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, delayMillis = 100)
+                    Spacer(modifier = Modifier.height(18.dp))
+                    MiniCalendar(
+                        visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(),
+                        onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) },
+                        calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L },
+                        gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it },
+                        calendarRowState = calendarRowState, visibleRowDate = visibleRowDate,
+                        calendarTasks = calendarTasks, calendarEvents = calendarEvents,
+                        infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, dayWidth = dayWidth,
+                        delayMillis = 200
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // The pinned TabBar (stays pinned after header scrolls away)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset {
+                            val totalHeaderExclTab = with(density) { (headerHeightBaseDp + 10.dp).toPx() } 
+                            val y = (totalHeaderExclTab + headerOffsetHeightPx).coerceAtLeast(0f)
+                            IntOffset(0, y.toInt())
+                        }
+                        .background(Theme.BgMid)
+                        .padding(horizontal = hPad, vertical = 8.dp)
+                ) {
+                    TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
+                }
+
+                // The Content Pager
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset { 
+                            val tabHeight = with(density) { 70.dp.toPx() }
+                            val totalHeaderHeight = with(density) { (headerHeightBaseDp + 80.dp).toPx() }
+                            val currentPos = (totalHeaderHeight + headerOffsetHeightPx).coerceAtLeast(tabHeight)
+                            IntOffset(0, currentPos.toInt())
+                        },
+                    pageSpacing = 16.dp
+                ) { page ->
                     PageContent(
                         page = page,
                         isLoading = isLoading,
@@ -325,7 +405,13 @@ fun DashboardScreen(
                         notifAi = notifAi,
                         completedIds = completedIds,
                         onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) },
-                        onTaskUpdate = { viewModel.updateTask(it) }
+                        onTaskUpdate = { viewModel.updateTask(it) },
+                        onEditRequest = { task ->
+                            taskToEdit = task
+                            addTaskSource = if (task.isReminder) 0 else 1
+                            showAddTaskDialog = true
+                        },
+                        horizontalPadding = hPad
                     )
                 }
             }
@@ -333,87 +419,52 @@ fun DashboardScreen(
 
         PullRefreshIndicator(refreshing = isLoading, state = pullRefreshState, modifier = Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars), backgroundColor = Theme.CardBg, contentColor = Theme.Teal)
 
-        AnimatedVisibility(visible = fabVisible, enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(tween(200)), exit = scaleOut(spring()) + fadeOut(tween(150)), modifier = Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = (20.dp + bottomInset))) {
-            val fabPage = pagerState.currentPage
-            val fabColor = when (fabPage) { 0 -> Theme.Teal; 1 -> Theme.Purple; else -> Theme.Blue }
-            val fabIcon = when (fabPage) { 0 -> Icons.Default.Add; 1 -> Icons.Default.Task; else -> Icons.Default.CalendarToday }
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(58.dp).shadow(elevation = 16.dp, shape = RoundedCornerShape(18.dp), ambientColor = fabColor.copy(alpha = 0.35f), spotColor = fabColor.copy(alpha = 0.35f)).clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(colors = listOf(fabColor, fabColor.copy(alpha = 0.8f)), start = Offset(0f, 0f), end = Offset(80f, 80f))).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                haptic()
-                when (pagerState.currentPage) {
-                    0 -> { addTaskSource = 0; showAddTaskDialog = true }
-                    1 -> { addTaskSource = 1; showAddTaskDialog = true }
-                    else -> showAddEventDialog = true
+    // Optional: Dim background when FAB expanded
+    if (isFabExpanded && fabVisible) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                    isFabExpanded = false
                 }
-            }) {
-                AnimatedContent(targetState = fabIcon, transitionSpec = { (scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(tween(150))) togetherWith (scaleOut(tween(100)) + fadeOut(tween(100))) }, label = "fabIconAnim") { icon -> Icon(icon, "Add", tint = Theme.BgDeep, modifier = Modifier.size(28.dp)) }
+        )
+    }
+
+    // --- EXPANDING FAB MENU & DIALOGS ---
+    CreationMenu(
+        isExpanded = isFabExpanded,
+        onToggle = { isFabExpanded = !isFabExpanded },
+        isVisible = fabVisible,
+        onSelect = { label ->
+            isFabExpanded = false
+            when (label) {
+                "Reminder" -> { addTaskSource = 0; showAddTaskDialog = true }
+                "Task" -> { addTaskSource = 1; showAddTaskDialog = true }
+                "Event" -> { showAddEventDialog = true }
+                "Countdown" -> { showAddCountdownDialog = true }
             }
-        }
+        },
+        haptic = haptic,
+        bottomInset = bottomInset
+    )
 
-        if (showAddTaskDialog) {
-            AddTaskDialog(
-                defaultDate = selectedDate,
-                sourceTab = addTaskSource,
-                onDismiss = { showAddTaskDialog = false },
-                onAdd = { title, timePref, category, date, description, repetition ->
-                    val timeString = when (timePref) {
-                        is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)
-                        TimePreference.LaterToday -> {
-                            val suggest = LocalTime.now().plusHours(2)
-                            String.format(Locale.US, "%02d:%02d", suggest.hour, suggest.minute)
-                        }
-                        TimePreference.Tomorrow -> "09:00"
-                        TimePreference.AiDecide -> "10:00"
-                        is TimePreference.Window -> String.format(Locale.US, "%02d:00", timePref.startHour)
-                    }
-
-                    val task = TaskItem(title = title, time = timeString, category = category, date = date, isReminder = (addTaskSource == 0))
-                    val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
-                    
-                    val id = CalendarUtils.addTaskToCalendar(context, task, rrule)
-                    if (id != null) {
-                        android.widget.Toast.makeText(context, "Added!", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "Failed: Check Calendar Sync", android.widget.Toast.LENGTH_LONG).show()
-                    }
-
-                    try { notifAi.onTaskCreated(task) } catch (e: Exception) {
-                        android.util.Log.e("DashboardScreen", "onTaskCreated error: ${e.message}", e)
-                    }
-                    
-                    showAddTaskDialog = false
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(500)
-                        viewModel.refresh()
-                    }
-                }
-            )
-        }
-
-        if (showAddEventDialog) {
-            AddEventDialog(
-                defaultDate = selectedDate,
-                onDismiss = { showAddEventDialog = false },
-                onAdd = { title, date, startTime, endTime, location, notes, repetition ->
-                    val event = EventItem(title = title, date = date, startTime = startTime, endTime = endTime, location = location, notes = notes)
-                    val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
-                    
-                    val id = CalendarUtils.addEventToCalendar(context, event, rrule)
-                    if (id != null) {
-                        android.widget.Toast.makeText(context, "Event added!", android.widget.Toast.LENGTH_SHORT).show()
-                    } else {
-                        android.widget.Toast.makeText(context, "Failed to add event", android.widget.Toast.LENGTH_LONG).show()
-                    }
-
-                    showAddEventDialog = false
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(500)
-                        viewModel.refresh()
-                    }
-                }
-            )
-        }
-
-        if (showSettingsDialog) { SettingsDialog(onDismiss = { showSettingsDialog = false }) }
+    CreationDialogs(
+        selectedDate = selectedDate,
+        showAddTaskDialog = showAddTaskDialog,
+        addTaskSource = addTaskSource,
+        taskToEdit = taskToEdit,
+        onDismissAddTask = { showAddTaskDialog = false; taskToEdit = null },
+        onUpdateTask = { viewModel.updateTask(it) },
+        viewModel = viewModel,
+        coroutineScope = coroutineScope,
+        showAddEventDialog = showAddEventDialog,
+        onDismissAddEvent = { showAddEventDialog = false },
+        showAddCountdownDialog = showAddCountdownDialog,
+        onDismissAddCountdown = { showAddCountdownDialog = false },
+        showSettingsDialog = showSettingsDialog,
+        onDismissSettings = { showSettingsDialog = false }
+    )
     }
 }
 
@@ -422,22 +473,48 @@ fun DashboardScreen(
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun DashboardHeader(today: LocalDate, visible: Boolean, onSettingsClick: () -> Unit) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(tween(500)) + slideInVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialOffsetY = { -80 })) {
+    AnimatedVisibility(
+        visible = visible, 
+        enter = fadeIn(tween(600)) + slideInVertically(
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), 
+            initialOffsetY = { -100 }
+        )
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 18.dp)) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.height(46.dp).wrapContentWidth().clip(RoundedCornerShape(14.dp)).background(Brush.linearGradient(colors = listOf(Theme.Teal, Color(0xFF00C9A7)), start = Offset(0f, 0f), end = Offset(80f, 80f))).padding(horizontal = 14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.CheckCircle, null, tint = Theme.BgDeep, modifier = Modifier.size(20.dp))
-                    Text("MyTask", color = Theme.BgDeep, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp)
+            Box(
+                contentAlignment = Alignment.Center, 
+                modifier = Modifier
+                    .height(48.dp)
+                    .wrapContentWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Brush.linearGradient(colors = listOf(Theme.Teal, Color(0xFF00C9A7))))
+                    .padding(horizontal = 16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "logoPulse")
+                    val logoScale by infiniteTransition.animateFloat(
+                        initialValue = 1f, targetValue = 1.15f,
+                        animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+                        label = "logoScale"
+                    )
+                    Icon(Icons.Default.CheckCircle, null, tint = Theme.BgDeep, modifier = Modifier.size(22.dp).scale(logoScale))
+                    Text("MyTask", color = Theme.BgDeep, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp)
                 }
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column {
-                Text(getGreeting(), color = Theme.White60, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                Text(today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()), color = Theme.White80, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(getGreeting(), color = Theme.White60, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text(today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()), color = Theme.White80, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.weight(1f))
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSettingsClick() }) {
-                Icon(Icons.Default.Settings, "Settings", tint = Theme.White60, modifier = Modifier.size(20.dp))
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Theme.White06)
+            ) {
+                Icon(Icons.Default.Settings, "Settings", tint = Theme.White60, modifier = Modifier.size(22.dp))
             }
         }
     }
@@ -445,32 +522,50 @@ private fun DashboardHeader(today: LocalDate, visible: Boolean, onSettingsClick:
 
 @Composable
 private fun ProgressCard(isLoading: Boolean, visible: Boolean, totalTasks: Int, completedCount: Int, progress: Float, delayMillis: Int = 0) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(tween(400, delayMillis = delayMillis)) + slideInVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialOffsetY = { 60 })) {
-        AnimatedContent(targetState = isLoading, transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) }, label = "loadingAnim") { loading ->
-            if (loading) { ShimmerBlock(height = 100f) } else {
-                Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Brush.linearGradient(colors = listOf(Theme.TealDim.copy(alpha = 0.55f), Theme.BgSurface.copy(alpha = 0.90f)), start = Offset(0f, 0f), end = Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY))).padding(1.dp)) {
-                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(21.dp)).background(Theme.CardBg).padding(18.dp)) {
+    AnimatedVisibility(
+        visible = visible, 
+        enter = fadeIn(tween(600, delayMillis = delayMillis)) + slideInVertically(
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), 
+            initialOffsetY = { 100 }
+        )
+    ) {
+        AnimatedContent(
+            targetState = isLoading, 
+            transitionSpec = { (scaleIn(spring()) + fadeIn()) togetherWith (scaleOut(spring()) + fadeOut()) }, 
+            label = "loadingAnim"
+        ) { loading ->
+            if (loading) { ShimmerBlock(height = 110f) } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Brush.linearGradient(colors = listOf(Theme.Teal.copy(alpha = 0.15f), Theme.BgSurface)))
+                        .padding(1.dp)
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp)).background(Theme.CardBg).padding(20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(72.dp)) {
-                                CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(72.dp), strokeWidth = 6.dp, color = Theme.White10, trackColor = Color.Transparent)
-                                val animProgress by animateFloatAsState(targetValue = progress, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow), label = "progressAnim")
-                                CircularProgressIndicator(progress = { animProgress }, modifier = Modifier.size(72.dp), strokeWidth = 6.dp, color = Theme.Teal, trackColor = Color.Transparent)
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                                CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.White06, trackColor = Color.Transparent)
+                                val animProgress by animateFloatAsState(targetValue = progress, animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessLow), label = "progressAnim")
+                                CircularProgressIndicator(progress = { animProgress }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.Teal, trackColor = Color.Transparent, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("${(progress * 100).toInt()}%", color = Theme.Teal, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                    Text("done", color = Theme.White60, fontSize = 10.sp)
+                                    Text("${(progress * 100).toInt()}%", color = Theme.Teal, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("done", color = Theme.White30, fontSize = 10.sp)
                                 }
                             }
-                            Spacer(modifier = Modifier.width(18.dp))
+                            Spacer(modifier = Modifier.width(20.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Today's Progress", color = Theme.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(5.dp))
-                                Text(if (totalTasks == 0) "Nothing scheduled — enjoy the day!" else "$completedCount of $totalTasks tasks done", color = Theme.White60, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.fillMaxWidth()) {
+                                Text("Progress", color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(if (totalTasks == 0) "No tasks for today!" else "$completedCount / $totalTasks completed", color = Theme.White60, fontSize = 13.sp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                                     val segments = if (totalTasks > 0) totalTasks else 5
                                     repeat(segments) { i ->
-                                        val segColor by animateColorAsState(targetValue = if (i < completedCount) Theme.Teal else Theme.White10, animationSpec = tween(400, delayMillis = i * 60), label = "seg_$i")
-                                        Box(modifier = Modifier.weight(1f).height(5.dp).clip(RoundedCornerShape(3.dp)).background(segColor))
+                                        val isFilled = i < completedCount
+                                        val segColor by animateColorAsState(targetValue = if (isFilled) Theme.Teal else Theme.White10, animationSpec = tween(500, delayMillis = i * 50), label = "seg_$i")
+                                        val segScale by animateFloatAsState(targetValue = if (isFilled) 1.1f else 1.0f, animationSpec = spring(Spring.DampingRatioHighBouncy), label = "segScale_$i")
+                                        Box(modifier = Modifier.weight(1f).height(6.dp).scale(segScale).clip(RoundedCornerShape(3.dp)).background(segColor))
                                     }
                                 }
                             }
@@ -584,7 +679,19 @@ private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, cal
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-private fun PageContent(page: Int, isLoading: Boolean, calendarTasks: List<TaskItem>, calendarEvents: List<EventItem>, selectedDate: LocalDate, notifAi: Any, completedIds: Set<Long>, onToggleCompletion: (Long, Boolean) -> Unit, onTaskUpdate: (TaskItem) -> Unit) {
+private fun PageContent(
+    page: Int,
+    isLoading: Boolean,
+    calendarTasks: List<TaskItem>,
+    calendarEvents: List<EventItem>,
+    selectedDate: LocalDate,
+    notifAi: Any,
+    completedIds: Set<Long>,
+    onToggleCompletion: (Long, Boolean) -> Unit,
+    onTaskUpdate: (TaskItem) -> Unit,
+    onEditRequest: (TaskItem) -> Unit = {},
+    horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp
+) {
     AnimatedContent(
         targetState = page, 
         transitionSpec = {
@@ -596,16 +703,16 @@ private fun PageContent(page: Int, isLoading: Boolean, calendarTasks: List<TaskI
         },
         label = "pageTransition"
     ) { targetPage ->
-        Box(Modifier.fillMaxSize()) {
-            if (isLoading) { 
+        Box(Modifier.fillMaxSize().padding(horizontal = horizontalPadding)) {
+            if (isLoading && false) { 
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { 
                     repeat(3) { ShimmerBlock(height = 80f) } 
                 } 
             } else {
                 when (targetPage) {
-                    0 -> if (calendarTasks.none { it.isReminder }) EmptyState("No reminders for this day", Icons.Outlined.Schedule) else RemindersTab(tasks = calendarTasks, selectedDate = selectedDate, notifAi = notifAi as com.algo1127.mytask.NotifAi.NotifAi, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
-                    1 -> TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskUpdate = onTaskUpdate)
-                    2 -> if (calendarEvents.isEmpty()) EmptyState("No events for this day", Icons.Outlined.Event) else EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
+                    0 -> RemindersTab(tasks = calendarTasks, selectedDate = selectedDate, notifAi = notifAi as com.algo1127.mytask.NotifAi.NotifAi, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onEditRequest = onEditRequest)
+                    1 -> TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskUpdate = onTaskUpdate, onEditRequest = onEditRequest)
+                    2 -> EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
                     else -> Box(modifier = Modifier.fillMaxSize())
                 }
             }

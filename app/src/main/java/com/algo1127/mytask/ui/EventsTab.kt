@@ -69,16 +69,6 @@ fun EventsTab(
             )
     }
 
-    if (sorted.isEmpty()) {
-        EmptyState(
-            icon     = Icons.Outlined.Event,
-            title    = "No events",
-            subtitle = "Tap + to add an event",
-            color    = Theme.Blue
-        )
-        return
-    }
-
     var now by remember { mutableStateOf(LocalTime.now()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -89,21 +79,31 @@ fun EventsTab(
 
     LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 4.dp),
+            .fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(bottom = 100.dp)
     ) {
-        items(sorted, key = { it.id }) { event ->
-            val status = eventStatus(event.startTime, event.endTime)
-            val isCompleted = completedIds.contains(event.id)
-            MetroEventRow(
-                event = event, 
-                status = status, 
-                isCompleted = isCompleted,
-                onToggle = { onToggleCompletion(event.id, !isCompleted) },
-                modifier = Modifier.animateItem()
-            )
+        if (sorted.isEmpty()) {
+            item {
+                EmptyState(
+                    icon     = Icons.Outlined.Event,
+                    title    = "No events",
+                    subtitle = "Tap + to add an event",
+                    color    = Theme.Blue
+                )
+            }
+        } else {
+            items(sorted, key = { it.id }) { event ->
+                val status = eventStatus(event.startTime, event.endTime)
+                val isCompleted = completedIds.contains(event.id)
+                MetroEventRow(
+                    event = event, 
+                    status = status, 
+                    isCompleted = isCompleted,
+                    onToggle = { onToggleCompletion(event.id, !isCompleted) },
+                    modifier = Modifier.animateItem()
+                )
+            }
         }
     }
 }

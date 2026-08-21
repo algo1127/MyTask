@@ -2,8 +2,9 @@ package com.algo1127.mytask.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,25 +37,28 @@ fun RemindersTab(
     selectedDate: LocalDate,
     notifAi: NotifAi,
     completedIds: Set<Long>,
-    onToggleCompletion: (Long, Boolean) -> Unit
+    onToggleCompletion: (Long, Boolean) -> Unit,
+    onEditRequest: (TaskItem) -> Unit = {}
 ) {
     val visibleTasks = remember(tasks, selectedDate) {
         tasks.filter { it.date == selectedDate && it.isReminder }
     }
 
-    if (visibleTasks.isEmpty()) {
-        EmptyState(
-            icon = Icons.Outlined.CheckCircle,
-            title = "All clear",
-            subtitle = "Tap + to add a reminder",
-            color = Theme.Teal
-        )
-    } else {
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 100.dp)
-        ) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 100.dp)
+    ) {
+        if (visibleTasks.isEmpty()) {
+            item {
+                EmptyState(
+                    icon = Icons.Outlined.CheckCircle,
+                    title = "All clear",
+                    subtitle = "Tap + to add a reminder",
+                    color = Theme.Teal
+                )
+            }
+        } else {
             items(visibleTasks, key = { it.id }) { item ->
                 val isCompleted = completedIds.contains(item.id)
                 
@@ -64,6 +68,7 @@ fun RemindersTab(
                     onToggle = {
                         onToggleCompletion(item.id, !isCompleted)
                     },
+                    onLongClick = { onEditRequest(item) },
                     modifier = Modifier.animateItem(
                         fadeInSpec = tween(300),
                         placementSpec = spring(stiffness = Spring.StiffnessLow)
@@ -74,12 +79,14 @@ fun RemindersTab(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReminderRow(
     item: TaskItem,
     isCompleted: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: () -> Unit = {}
 ) {
     var isTapped by remember { mutableStateOf(false) }
     LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
@@ -107,9 +114,12 @@ private fun ReminderRow(
                     else
                         Brush.linearGradient(colors = listOf(Theme.CardBg, Theme.CardBg))
                 )
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                    isTapped = true; onToggle()
-                }
+                .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { isTapped = true; onToggle() },
+                    onLongClick = onLongClick
+                )
         ) {
             Box(
                 modifier = Modifier

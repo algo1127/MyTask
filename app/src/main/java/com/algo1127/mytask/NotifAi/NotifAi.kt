@@ -20,10 +20,11 @@ import java.time.temporal.ChronoUnit
 class NotifAi(private val context: Context) {
 
     private val persistence    = Persistence(context)
-    private val phraseList     = PhraseList()
+    private val phrases       = PhraseList()
     private val learningEngine = LearningEngine(context)
     private val rewardSystem   = RewardSystem(context)
     private val scope          = CoroutineScope(Dispatchers.Default)
+    private val reminderScheduler = ReminderScheduler(context)
 
     // AI state
     private var trustScore     = 0.5f
@@ -86,7 +87,7 @@ class NotifAi(private val context: Context) {
                 val text = if (aiPreferences["soulless"] == "true") {
                     "Reminder: ${task.title}"
                 } else {
-                    phraseList.pickPhrase(
+                    phrases.pickPhrase(
                         task,
                         intensity,
                         mood,
@@ -244,27 +245,20 @@ class NotifAi(private val context: Context) {
     fun scheduleFlexible(task: Task) {
         scope.launch {
             try {
+                var resolvedTask = task
                 when (val pref = task.timePreference) {
-                    is TimePreference.Fixed -> {
-                        android.util.Log.d("NotifAi", "Scheduling ${task.title} at ${pref.time}")
-                    }
-                    TimePreference.LaterToday -> {
-                        android.util.Log.d("NotifAi", "Scheduling ${task.title} for later today")
-                    }
-                    TimePreference.Tomorrow -> {
-                        android.util.Log.d("NotifAi", "Scheduling ${task.title} for tomorrow")
-                    }
-                    is TimePreference.Window -> {
-                        android.util.Log.d("NotifAi", "Scheduling ${task.title} in window")
-                    }
                     TimePreference.AiDecide -> {
-                        // Resolve to real time using learned patterns
                         val suggested = suggestTime(task.category)
-                        android.util.Log.d("NotifAi",
-                            "AI decided ${task.title} → ${suggested.time}")
+                        resolvedTask = task.copy(timePreference = suggested)
+                        android.util.Log.d("NotifAi", "AI decided ${task.title} → ${suggested.time}")
                     }
+                    else -> {}
                 }
-                evaluateTask(task)
+                
+                // Save the resolved task so the scheduler has the right time
+                persistence.saveTask(resolvedTask)
+                reminderScheduler.schedule(resolvedTask)
+                
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "scheduleFlexible failed: ${e.message}", e)
             }
@@ -309,7 +303,7 @@ class NotifAi(private val context: Context) {
     private fun showCompletionNotification(task: Task) {
         scope.launch {
             try {
-                val text    = phraseList.getCompletionPhrase(task)
+                val text    = phrases.getCompletionPhrase(task)
                 val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
                         as NotificationManager
                 val builder = NotificationCompat.Builder(context, "mytask_channel")

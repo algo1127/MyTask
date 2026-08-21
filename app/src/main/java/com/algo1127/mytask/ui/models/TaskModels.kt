@@ -65,6 +65,15 @@ data class EventItem(
     val endTime: String,
     val location: String,
     val date: LocalDate,
-    @PrimaryKey val id: Long = System.nanoTime()
+    @PrimaryKey val id: Long = System.nanoTime(),
+    val notes: String = ""
+)
+
+@Entity(tableName = "countdowns")
+data class CountdownItem(
+    @PrimaryKey val id: Long = System.nanoTime(),
+    val title: String,
+    val targetDateTime: LocalDateTime,
+    val color: Int = 0xFF4DFFD2.toInt() // Default Teal
 )
 // ✅ REMOVED: TaskCategory enum (use the one in ui/ package)

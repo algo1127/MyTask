@@ -5,10 +5,28 @@ import android.content.Context
 import android.content.Intent
 import com.algo1127.mytask.MyTaskApplication
 import com.algo1127.mytask.NotifAi.model.NotificationAction
+import kotlinx.coroutines.launch
 
 class Receiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getLongExtra("taskId", -1)
+        
+        if (intent.action == "com.algo1127.mytask.ACTION_TRIGGER_REMINDER") {
+            android.util.Log.d("Receiver", "Reminder triggered for task $taskId")
+            val notifAi = (context.applicationContext as MyTaskApplication).notifAi
+            // To send a notification we need the full Task object.
+            // For now, we'll try to retrieve it from persistence.
+            val persistence = com.algo1127.mytask.NotifAi.persistence.Persistence(context)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val tasks = persistence.getTasks()
+                val task = tasks.find { it.id == taskId }
+                if (task != null) {
+                    notifAi.evaluateTask(task)
+                }
+            }
+            return
+        }
+
         val actionString = intent.getStringExtra("action")
 
         android.util.Log.d("Receiver", "=================================")

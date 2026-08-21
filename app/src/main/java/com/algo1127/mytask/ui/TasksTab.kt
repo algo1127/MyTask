@@ -2,8 +2,9 @@ package com.algo1127.mytask.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -38,7 +39,8 @@ fun TasksTab(
     selectedDate: LocalDate,
     completedIds: Set<Long>,
     onToggleCompletion: (Long, Boolean) -> Unit,
-    onTaskUpdate: (TaskItem) -> Unit = {}
+    onTaskUpdate: (TaskItem) -> Unit = {},
+    onEditRequest: (TaskItem) -> Unit = {}
 ) {
     var isGridView by remember { mutableStateOf(false) }
 
@@ -46,41 +48,60 @@ fun TasksTab(
         tasks.filter { it.date == selectedDate && !it.isReminder }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { isGridView = !isGridView }) {
-                Icon(
-                    if (isGridView) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
-                    contentDescription = "Toggle View",
-                    tint = Theme.White60
-                )
+    if (isGridView) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { isGridView = !isGridView }) {
+                    Icon(
+                        if (isGridView) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                        contentDescription = "Toggle View",
+                        tint = Theme.White60
+                    )
+                }
             }
-        }
-
-        if (isGridView) {
             EisenhowerGrid(
                 tasks = visibleTasks,
                 onTaskUpdate = onTaskUpdate,
                 onToggleCompletion = onToggleCompletion,
                 completedIds = completedIds
             )
-        } else if (visibleTasks.isEmpty()) {
-            EmptyState(
-                icon = Icons.Outlined.Task,
-                title = "No tasks",
-                subtitle = "Tap + to add a task",
-                color = Theme.Purple
-            )
-        } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 100.dp)
-            ) {
+        }
+    } else {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 100.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { isGridView = !isGridView }) {
+                        Icon(
+                            if (isGridView) Icons.AutoMirrored.Outlined.ViewList else Icons.Outlined.GridView,
+                            contentDescription = "Toggle View",
+                            tint = Theme.White60
+                        )
+                    }
+                }
+            }
+
+            if (visibleTasks.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Outlined.Task,
+                        title = "No tasks",
+                        subtitle = "Tap + to add a task",
+                        color = Theme.Purple
+                    )
+                }
+            } else {
                 items(visibleTasks, key = { it.id }) { item ->
                     val isCompleted = completedIds.contains(item.id)
                     
@@ -122,6 +143,7 @@ fun TasksTab(
                                 item = item,
                                 isCompleted = isCompleted,
                                 onToggle = { onToggleCompletion(item.id, !isCompleted) },
+                                onLongClick = { onEditRequest(item) },
                                 modifier = Modifier.animateItem(
                                     fadeInSpec = tween(300),
                                     placementSpec = spring(stiffness = Spring.StiffnessLow)
@@ -135,12 +157,14 @@ fun TasksTab(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TaskRow(
     item: TaskItem,
     isCompleted: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: () -> Unit = {}
 ) {
     var isTapped by remember { mutableStateOf(false) }
     LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
@@ -165,9 +189,12 @@ private fun TaskRow(
                     else
                         Brush.linearGradient(colors = listOf(Theme.CardBg, Theme.CardBg))
                 )
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                    isTapped = true; onToggle()
-                }
+                .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { isTapped = true; onToggle() },
+                    onLongClick = onLongClick
+                )
         ) {
             Box(
                 modifier = Modifier
