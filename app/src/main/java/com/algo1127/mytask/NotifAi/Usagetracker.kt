@@ -28,6 +28,7 @@ data class UsageRecord(
     val category:       TaskCategory,
     val taskId:         Long,
     val hour:           Int,
+    val minute:         Int,
     val dayOfWeek:      Int,
     val responseTimeMs: Long = -1L,
     // New — null until UsageAccessCollector has run at least once
@@ -35,7 +36,9 @@ data class UsageRecord(
     val unlockCount:     Int = -1,
     val activeApp:       String = "",
     val wasIdle:         Boolean = false,
-    val wasInFocusApp:   Boolean = false
+    val wasInFocusApp:   Boolean = false,
+    val entropy:         Float = -1f,
+    val sessionDepth:    Int = -1
 )
 
 // ─── Tracker ─────────────────────────────────────────────────────────────────
@@ -72,17 +75,26 @@ class UsageTracker(context: Context) {
         event:    UsageEvent,
         category: TaskCategory,
         taskId:   Long,
-        responseTimeMs: Long = -1L
+        responseTimeMs: Long = -1L,
+        deviceCtx: DeviceContext? = null
     ) {
         val now = LocalDateTime.now()
         val rec = UsageRecord(
-            timestampMs    = System.currentTimeMillis(),
-            event          = event,
-            category       = category,
-            taskId         = taskId,
-            hour           = now.hour,
-            dayOfWeek      = now.dayOfWeek.value,
-            responseTimeMs = responseTimeMs
+            timestampMs     = System.currentTimeMillis(),
+            event           = event,
+            category        = category,
+            taskId          = taskId,
+            hour            = now.hour,
+            minute          = now.minute,
+            dayOfWeek       = now.dayOfWeek.value,
+            responseTimeMs  = responseTimeMs,
+            screenOnMinutes = deviceCtx?.screenOnMinutes ?: -1,
+            unlockCount     = deviceCtx?.unlockCount ?: -1,
+            activeApp       = deviceCtx?.activeAppPackage ?: "",
+            wasIdle         = deviceCtx?.isIdle ?: false,
+            wasInFocusApp   = deviceCtx?.inFocusApp ?: false,
+            entropy         = deviceCtx?.entropy ?: -1f,
+            sessionDepth    = deviceCtx?.sessionDepth ?: -1
         )
         append(rec)
     }
@@ -137,14 +149,16 @@ class UsageTracker(context: Context) {
                         category       = TaskCategory.valueOf(obj.getString("cat")),
                         taskId         = obj.getLong("tid"),
                         hour           = obj.getInt("h"),
+                        minute         = obj.optInt("m", 0),
                         dayOfWeek      = obj.getInt("dow"),
                         responseTimeMs = obj.optLong("rt", -1L),
                         screenOnMinutes = obj.optInt("som", -1),
                         unlockCount     = obj.optInt("uc", -1),
                         activeApp       = obj.optString("app", ""),
                         wasIdle         = obj.optBoolean("idle", false),
-                        wasInFocusApp   = obj.optBoolean("focus", false)
-
+                        wasInFocusApp   = obj.optBoolean("focus", false),
+                        entropy         = obj.optDouble("ent", -1.0).toFloat(),
+                        sessionDepth    = obj.optInt("sdp", -1)
                     )
                 } catch (e: Exception) { null }
             }
@@ -160,6 +174,7 @@ class UsageTracker(context: Context) {
                 put("cat", r.category.name)
                 put("tid", r.taskId)
                 put("h",   r.hour)
+                put("m",   r.minute)
                 put("dow", r.dayOfWeek)
                 put("rt",  r.responseTimeMs)
                 put("som",   r.screenOnMinutes)
@@ -167,7 +182,8 @@ class UsageTracker(context: Context) {
                 put("app",   r.activeApp)
                 put("idle",  r.wasIdle)
                 put("focus", r.wasInFocusApp)
-
+                put("ent",   r.entropy)
+                put("sdp",   r.sessionDepth)
             })
         }
         prefs.edit().putString(KEY_RECORDS, arr.toString()).apply()

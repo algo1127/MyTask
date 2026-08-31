@@ -13,6 +13,7 @@ import com.algo1127.mytask.ui.models.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
@@ -49,8 +50,12 @@ class NotifAi(private val context: Context) {
      * Returns a real data-driven Fixed time for this category.
      * NOT hardcoded — uses actual usage history.
      */
-    fun suggestTime(category: TaskCategory): TimePreference.Fixed {
-        val best = learningEngine.getBestTime(category)
+    fun suggestTime(
+        category: TaskCategory, 
+        aroundHour: Int? = null, 
+        betweenHours: Pair<Int, Int>? = null
+    ): TimePreference.Fixed {
+        val best = learningEngine.getBestTime(category, aroundHour = aroundHour, betweenHours = betweenHours)
         return TimePreference.Fixed(best)
     }
 
@@ -58,17 +63,19 @@ class NotifAi(private val context: Context) {
      * Finds the next best engagement slot for today.
      */
     fun resolveLaterToday(category: TaskCategory): LocalTime {
-        val now = LocalTime.now()
-        // Try to find the best time after the current hour
-        return learningEngine.getBestTime(category, afterHour = now.hour)
+        val now = LocalDateTime.now()
+        // Snoozing/Resolving reminders later today -> use REMINDER_SENT mode
+        // Anchor to 'now' ensures it doesn't suggest a past time
+        return learningEngine.getBestTime(category, mode = AnalysisMode.REMINDER_SENT, anchor = now)
     }
 
     /**
      * Finds the best engagement slot for tomorrow.
      */
     fun resolveTomorrow(category: TaskCategory): LocalTime {
-        // Find best time starting from the beginning of the day
-        return learningEngine.getBestTime(category, afterHour = -1)
+        val tomorrow = LocalDate.now().plusDays(1).atStartOfDay()
+        // Find best time starting from the beginning of tomorrow
+        return learningEngine.getBestTime(category, mode = AnalysisMode.REMINDER_SENT, anchor = tomorrow)
     }
 
     // ── Notification sending ──────────────────────────────────────────
@@ -157,9 +164,12 @@ class NotifAi(private val context: Context) {
         val progressFactor = 1.0f - task.progress
 
         // Trust modifier now also considers real notification effectiveness
+        val allRecords = learningEngine.tracker.getAll()
         val effectiveness = if (learningEngine.hasEnoughData()) {
-            PatternAnalyzer.effectivenessScore(learningEngine.tracker.getAll()).toFloat()
+            PatternAnalyzer.effectivenessScore(allRecords).toFloat()
         } else trustScore
+        
+        val entropyScore = PatternAnalyzer.focusEntropyScore(allRecords).toFloat()
 
         val trustModifier = when {
             effectiveness < 0.25f -> 1.35f   // very low effectiveness → be more aggressive
@@ -167,13 +177,18 @@ class NotifAi(private val context: Context) {
             effectiveness > 0.7f  -> 0.90f   // doing well → back off a little
             else                  -> 1.0f
         }
+        
+        // Analytical Upgrade: Entropy modifier. 
+        // If user is highly distracted (low entropy score), boost intensity to "break through"
+        // If user is in deep focus (high entropy score), lower intensity to respect flow.
+        val entropyModifier = (1.2f - (entropyScore - 0.5f)).coerceIn(0.7f, 1.3f)
 
         val categoryModifier = when (task.category) {
             TaskCategory.Work, TaskCategory.Study -> 1.1f
             else                                  -> 1.0f
         }
 
-        return (deadlineFactor * progressFactor * trustModifier * categoryModifier)
+        return (deadlineFactor * progressFactor * trustModifier * categoryModifier * entropyModifier)
             .coerceIn(0.0f, 1.0f)
     }
 

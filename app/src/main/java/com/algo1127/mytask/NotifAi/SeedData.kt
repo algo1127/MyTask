@@ -68,13 +68,21 @@ object SeedData {
         val finalTime = target.plusDays(offsetDays)
         
         return UsageRecord(
-            timestampMs = finalTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
-            event = event,
-            category = cat,
-            taskId = -99L, // marker for synthetic
-            hour = hour,
-            dayOfWeek = dow,
-            responseTimeMs = 120_000L // 2 minutes (good response)
+            timestampMs     = finalTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            event           = event,
+            category        = cat,
+            taskId          = -99L,
+            hour            = hour,
+            minute          = 0,
+            dayOfWeek       = dow,
+            responseTimeMs  = 120_000L,
+            // --- Analytical Baseline ---
+            screenOnMinutes = if (hour in 9..22) 15 else 0,
+            unlockCount     = if (hour in 9..22) 3 else 0,
+            activeApp       = if (hour in 18..21) "com.google.android.youtube" else "com.google.android.calendar",
+            wasIdle         = hour in 0..6,
+            entropy         = if (hour in 18..21) 3.5f else 0.4f, // High entropy during slack hours
+            sessionDepth    = if (hour in 9..12) 400 else 45     // Deep focus in the morning
         )
     }
 }

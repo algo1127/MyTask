@@ -39,22 +39,34 @@ class LearningEngine(context: Context) {
     /**
      * Returns the best [LocalTime] to notify for a given category.
      * This is what AddTaskDialog calls for "AI Decide."
-     *
-     * Uses real usage data (including seeded baseline) if available.
      */
     fun getBestTime(
-        category:  TaskCategory,
-        afterHour: Int = (LocalDateTime.now().hour + 1) % 24
+        category:     TaskCategory,
+        mode:         AnalysisMode = AnalysisMode.TASK_PLACEMENT,
+        anchor:       LocalDateTime = LocalDateTime.now(),
+        aroundHour:   Int? = null,
+        betweenHours: Pair<Int, Int>? = null
     ): LocalTime {
         val records = tracker.getAll()
 
         if (records.isEmpty()) {
             val defaultHour = coldStartHour[category] ?: 10
-            val clamped = if (defaultHour <= afterHour) afterHour + 1 else defaultHour
-            return LocalTime.of(clamped.coerceAtMost(22), 0)
+            // Fallback for empty data: ensuring it's future if anchor is today
+            val suggestion = LocalTime.of(defaultHour.coerceAtMost(22), 0)
+            return if (anchor.toLocalDate() == LocalDateTime.now().toLocalDate() && 
+                suggestion.isBefore(LocalTime.now().plusMinutes(5))) {
+                LocalTime.now().plusHours(1).withMinute(0)
+            } else suggestion
         }
 
-        val bestDt = PatternAnalyzer.bestTimeForCategory(records, category, afterHour)
+        val bestDt = PatternAnalyzer.bestTimeForCategory(
+            records, 
+            category, 
+            mode = mode,
+            anchor = anchor,
+            aroundHour = aroundHour,
+            betweenHours = betweenHours
+        )
         return bestDt.toLocalTime()
     }
 
@@ -73,9 +85,22 @@ class LearningEngine(context: Context) {
         if (PatternAnalyzer.isFatigued(records)) return false
 
         val now = LocalDateTime.now()
-        val score = PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
+        
+        // ── Reminder Mode Score ──────────────────────────────────────
+        // We want times where they ARE using the device (Density) 
+        // AND it's a historically good slot.
+        val baseScore = PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
+        val usageDensity = PatternAnalyzer.usageDensityScore(records, now.hour, now.dayOfWeek.value)
+        
+        val entropyScore = PatternAnalyzer.focusEntropyScore(records)
         val contextBonus = ContextScorer.contextDelta(deviceCtx)
-        return (score + contextBonus) >= 0.30
+        
+        // Final probability: blend historical completion with current usage density
+        val analyticalScore = (baseScore * 0.6 + usageDensity * 0.4)
+        
+        val threshold = if (entropyScore < 0.3) 0.65 else 0.35
+        
+        return (analyticalScore + contextBonus + (entropyScore - 0.5) * 0.4) >= threshold
     }
 
     /**
@@ -85,10 +110,13 @@ class LearningEngine(context: Context) {
     fun currentSlotScore(category: TaskCategory): Double {
         val records = tracker.getAll()
         val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        val entropyScore = PatternAnalyzer.focusEntropyScore(records)
+        
         if (records.size < MIN_RECORDS_FOR_REAL_LEARNING) return 0.5 + ContextScorer.contextDelta(deviceCtx)
         val now = LocalDateTime.now()
         val base = PatternAnalyzer.slotScore(records, category, now.hour, now.dayOfWeek.value)
-        return (base + ContextScorer.contextDelta(deviceCtx)).coerceIn(0.0, 1.0)
+        
+        return (base + ContextScorer.contextDelta(deviceCtx) + (entropyScore - 0.5) * 0.3).coerceIn(0.0, 1.0)
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -97,32 +125,39 @@ class LearningEngine(context: Context) {
 
     fun recordPositive(taskId: Long, category: TaskCategory) {
         val responseTime = tracker.getResponseTime(taskId)
-        tracker.record(UsageEvent.COMPLETED, category, taskId, responseTime)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.COMPLETED, category, taskId, responseTime, deviceCtx)
     }
 
     fun recordIgnore(taskId: Long, category: TaskCategory) {
-        tracker.record(UsageEvent.IGNORED, category, taskId)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.IGNORED, category, taskId, deviceCtx = deviceCtx)
     }
 
     fun recordForget(taskId: Long, category: TaskCategory) {
-        tracker.record(UsageEvent.FORGOT, category, taskId)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.FORGOT, category, taskId, deviceCtx = deviceCtx)
     }
 
     fun recordSkip(taskId: Long, category: TaskCategory) {
-        tracker.record(UsageEvent.SKIPPED, category, taskId)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.SKIPPED, category, taskId, deviceCtx = deviceCtx)
     }
 
     fun recordNotificationSent(taskId: Long, category: TaskCategory) {
         tracker.markNotificationSent(taskId)
-        tracker.record(UsageEvent.NOTIFICATION_SENT, category, taskId)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.NOTIFICATION_SENT, category, taskId, deviceCtx = deviceCtx)
     }
 
     fun recordAppOpened(category: TaskCategory = TaskCategory.Personal) {
-        tracker.record(UsageEvent.APP_OPENED, category, -1L)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.APP_OPENED, category, -1L, deviceCtx = deviceCtx)
     }
 
     fun recordTaskCreated(taskId: Long, category: TaskCategory) {
-        tracker.record(UsageEvent.TASK_CREATED, category, taskId)
+        val deviceCtx = UsageAccessCollector.getLatest(appContext)
+        tracker.record(UsageEvent.TASK_CREATED, category, taskId, deviceCtx = deviceCtx)
     }
 
     // ═════════════════════════════════════════════════════════════════

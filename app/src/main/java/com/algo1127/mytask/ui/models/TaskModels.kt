@@ -73,7 +73,11 @@ data class EventItem(
 data class CountdownItem(
     @PrimaryKey val id: Long = System.nanoTime(),
     val title: String,
+    val optionalTitle: String? = null,
     val targetDateTime: LocalDateTime,
-    val color: Int = 0xFF4DFFD2.toInt() // Default Teal
+    val color: Int = 0xFF4DFFD2.toInt(), // Default Teal
+    val linkedItemId: Long? = null,
+    val linkedItemType: String? = null, // "TASK", "EVENT"
+    val createdAt: LocalDateTime = LocalDateTime.now()
 )
 // ✅ REMOVED: TaskCategory enum (use the one in ui/ package)

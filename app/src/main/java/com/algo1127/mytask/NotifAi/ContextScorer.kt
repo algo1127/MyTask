@@ -38,17 +38,37 @@ object ContextScorer {
         )
         if (ctx.activeAppPackage in productivityApps) delta += 0.12
 
-        // Entertainment/gaming — bad time for work/study tasks
+        // Entertainment/gaming — bad time for work/study tasks, 
+        // BUT potentially a good time to trigger a "Get to work" nudge if it's a slacking window.
         val entertainmentApps = setOf(
             "com.netflix.mediaclient",
             "com.spotify.music",
             "com.google.android.youtube",
-            "com.valvesoftware.android.steam.community"
+            "com.valvesoftware.android.steam.community",
+            "com.discord",
+            "com.skype.raider"
         )
-        if (ctx.activeAppPackage in entertainmentApps) delta -= 0.15
+        if (ctx.activeAppPackage in entertainmentApps) {
+            // If they've been on YouTube for 20+ mins, it's actually a GOOD time to nudge
+            if (ctx.screenOnMinutes >= 20) delta += 0.20
+            else delta -= 0.15
+        }
 
         return delta.coerceIn(-0.40, 0.20)
     }
+
+    fun isSlackApp(pkg: String): Boolean = pkg in setOf(
+        "com.netflix.mediaclient",
+        "com.spotify.music",
+        "com.google.android.youtube",
+        "com.valvesoftware.android.steam.community",
+        "com.instagram.android",
+        "com.twitter.android",
+        "com.whatsapp",
+        "org.telegram.messenger",
+        "com.skype.raider",
+        "com.discord"
+    )
 
     /**
      * True if we should skip this notification entirely based on device state.

@@ -5,13 +5,14 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.algo1127.mytask.ui.models.CountdownItem
 import com.algo1127.mytask.ui.models.EventItem
 import com.algo1127.mytask.ui.models.ReminderItem
 import com.algo1127.mytask.ui.models.Task
 
 @Database(
-    entities = [CompletionRecord::class, Task::class, ReminderItem::class, EventItem::class],
-    version = 3,
+    entities = [CompletionRecord::class, Task::class, ReminderItem::class, EventItem::class, CountdownItem::class],
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -20,6 +21,7 @@ abstract class MyTaskDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
     abstract fun reminderDao(): ReminderDao
     abstract fun eventDao(): EventDao
+    abstract fun countdownDao(): CountdownDao
 
     companion object {
         @Volatile

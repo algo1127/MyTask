@@ -13,7 +13,9 @@ data class DeviceContext(
     val unlockCount:      Int,      // unlocks in the last hour
     val activeAppPackage: String,   // most recent foreground app
     val isIdle:           Boolean,  // no unlocks in 30+ min
-    val inFocusApp:       Boolean   // user in call/meeting/video
+    val inFocusApp:       Boolean,  // user in call/meeting/video
+    val entropy:          Float = 0f,    // app switches per minute
+    val sessionDepth:     Int = 0        // avg seconds per app session
 ) {
     companion object {
         val FOCUS_APPS = setOf(
@@ -34,7 +36,9 @@ data class DeviceContext(
                     unlockCount      = o.getInt("uc"),
                     activeAppPackage = o.getString("app"),
                     isIdle           = o.getBoolean("idle"),
-                    inFocusApp       = o.getBoolean("focus")
+                    inFocusApp       = o.getBoolean("focus"),
+                    entropy          = o.optDouble("ent", 0.0).toFloat(),
+                    sessionDepth     = o.optInt("sdp", 0)
                 )
             } catch (e: Exception) { null }
         }
@@ -49,6 +53,8 @@ data class DeviceContext(
         put("app",   activeAppPackage)
         put("idle",  isIdle)
         put("focus", inFocusApp)
+        put("ent",   entropy)
+        put("sdp",   sessionDepth)
     }
 }
 
@@ -99,13 +105,43 @@ class UsageAccessCollector(
                 stats.any { it.packageName == pkg && (now - it.lastTimeUsed) < 600_000L }
             }
 
+            // ─── Entropy & Session Depth Calculation ───
+            val appSwitches = mutableListOf<Long>()
+            val eventsLog = usm.queryEvents(oneHourAgo, now)
+            val event = android.app.usage.UsageEvents.Event()
+            
+            var lastForegroundTime = 0L
+            val sessionDurations = mutableListOf<Long>()
+            
+            while (eventsLog.hasNextEvent()) {
+                eventsLog.getNextEvent(event)
+                when (event.eventType) {
+                    android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                        appSwitches.add(event.timeStamp)
+                        lastForegroundTime = event.timeStamp
+                    }
+                    android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                        if (lastForegroundTime > 0) {
+                            sessionDurations.add(event.timeStamp - lastForegroundTime)
+                            lastForegroundTime = 0
+                        }
+                    }
+                }
+            }
+            
+            val entropy = if (screenOnMinutes > 0) appSwitches.size.toFloat() / screenOnMinutes else 0f
+            val avgSessionSec = if (sessionDurations.isNotEmpty()) 
+                (sessionDurations.average() / 1000.0).toInt() else 0
+
             val dc = DeviceContext(
                 timestampMs      = now,
                 screenOnMinutes  = screenOnMinutes,
                 unlockCount      = unlocks,
                 activeAppPackage = activeApp,
                 isIdle           = isIdle,
-                inFocusApp       = inFocusApp
+                inFocusApp       = inFocusApp,
+                entropy          = entropy,
+                sessionDepth     = avgSessionSec
             )
 
             // Persist latest snapshot

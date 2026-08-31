@@ -2,26 +2,27 @@ package com.algo1127.mytask.NotifAi
 
 import com.algo1127.mytask.ui.TaskCategory
 import java.time.LocalDateTime
-import kotlin.math.exp
-import kotlin.math.ln
-import kotlin.math.max
-import kotlin.math.min
+import java.util.Random
+import kotlin.math.*
 
 /**
- * Stateless analyzer — takes a list of UsageRecords and produces
- * actionable insights. All scoring is data-driven; nothing is hardcoded
- * except sensible priors that fade as real data accumulates.
+ * Analytical Engine — uses Bayesian inference (Thompson Sampling) and 
+ * Contextual Entropy to predict optimal engagement windows.
  */
+enum class AnalysisMode {
+    TASK_PLACEMENT, // Finding time to actually do the task (slacking or off-phone)
+    REMINDER_SENT   // Finding time to send notif (phone in hand, not sleeping)
+}
+
 object PatternAnalyzer {
 
     // ── Decay constant: events older than ~45 days half their weight ──
     private const val DECAY_HALF_LIFE_DAYS = 45.0
     private val DECAY_LAMBDA = ln(2.0) / DECAY_HALF_LIFE_DAYS
 
-    // ── Prior strength: equivalent to ~8 "neutral" observations ───────
-    // Fades as real data accumulates, so data dominates quickly.
-    private const val PRIOR_STRENGTH = 8.0
-    private const val PRIOR_SCORE    = 0.45   // slightly below neutral
+    // ── Prior strength: equivalent to ~4 "neutral" observations ───────
+    private const val PRIOR_ALPHA = 2.0
+    private const val PRIOR_BETA  = 2.0
 
     // ── Response time thresholds (ms) ─────────────────────────────────
     private const val RESPONSE_FAST   = 2 * 60_000L   // < 2 min  → excellent
@@ -43,26 +44,65 @@ object PatternAnalyzer {
      * [searchDays] — how many days ahead to search (default 2)
      */
     fun bestTimeForCategory(
-        records:    List<UsageRecord>,
-        category:   TaskCategory,
-        afterHour:  Int = (LocalDateTime.now().hour + 1) % 24,
-        searchDays: Int = 2
+        records:      List<UsageRecord>,
+        category:     TaskCategory,
+        searchDays:   Int = 2,
+        mode:         AnalysisMode = AnalysisMode.TASK_PLACEMENT,
+        anchor:       LocalDateTime = LocalDateTime.now(),
+        aroundHour:   Int? = null,
+        betweenHours: Pair<Int, Int>? = null
     ): LocalDateTime {
         val now = LocalDateTime.now()
+        val startPoint = if (anchor.isBefore(now)) now else anchor
 
-        // Score every candidate slot in the search window
+        // Score every candidate slot in the search window (15-min steps)
         data class Candidate(val dt: LocalDateTime, val score: Double)
         val candidates = mutableListOf<Candidate>()
 
-        repeat(searchDays * 24) { offset ->
-            val candidate = now.plusHours(offset.toLong())
-            if (candidate.hour < afterHour && offset < 24) return@repeat  // skip past hours today
+        // 15-minute resolution
+        repeat(searchDays * 24 * 4) { offset ->
+            val candidate = startPoint.plusMinutes(offset.toLong() * 15)
+                .withSecond(0).withNano(0)
+            
+            // Ensure suggestion is strictly in the future
+            if (candidate.isBefore(now.plusMinutes(5))) return@repeat 
 
-            val score = slotScore(records, category, candidate.hour, candidate.dayOfWeek.value)
-            candidates.add(Candidate(candidate.withMinute(0).withSecond(0).withNano(0), score))
+            // --- Apply Guided Constraints ---
+            if (betweenHours != null) {
+                val (start, end) = betweenHours
+                if (candidate.hour < start || candidate.hour >= end) return@repeat
+            }
+
+            var score = when (mode) {
+                AnalysisMode.TASK_PLACEMENT -> {
+                    val completionScore = slotScore(records, category, candidate.hour, candidate.dayOfWeek.value, useSampling = true)
+                    val density = usageDensityScore(records, candidate.hour, candidate.dayOfWeek.value)
+                    val slack = slackScore(records, candidate.hour, candidate.dayOfWeek.value)
+                    val dead = deadSpaceScore(records, candidate.hour, candidate.dayOfWeek.value)
+                    
+                    // Prioritize (Good completion) AND (Not on phone OR Slacking) AND (Not dead space)
+                    (completionScore * 0.4 + (1.0 - density) * 0.3 + slack * 0.3) * (1.0 - dead)
+                }
+                AnalysisMode.REMINDER_SENT -> {
+                    val density = usageDensityScore(records, candidate.hour, candidate.dayOfWeek.value)
+                    val dead = deadSpaceScore(records, candidate.hour, candidate.dayOfWeek.value)
+                    
+                    // Prioritize High Density (Visibility) AND NOT Dead Space
+                    density * (1.0 - dead)
+                }
+            }
+
+            // Around Hour Penalty: -0.1 per hour distance
+            aroundHour?.let { target ->
+                val distance = abs(candidate.hour - target)
+                val penalty = (distance * 0.1).coerceAtMost(0.5)
+                score -= penalty
+            }
+
+            candidates.add(Candidate(candidate, score))
         }
 
-        return candidates.maxByOrNull { it.score }?.dt ?: now.plusHours(2)
+        return candidates.maxByOrNull { it.score }?.dt ?: now.plusHours(1).withMinute(0)
     }
 
     /**
@@ -73,35 +113,38 @@ object PatternAnalyzer {
         records:    List<UsageRecord>,
         category:   TaskCategory,
         hour:       Int,
-        dayOfWeek:  Int
+        dayOfWeek:  Int,
+        useSampling: Boolean = false
     ): Double {
         val relevant = records.filter {
             it.hour == hour &&
                     it.dayOfWeek == dayOfWeek &&
                     (it.category == category ||
-                            // borrow signal from similar categories if sparse
                             categoryGroup(it.category) == categoryGroup(category))
         }
 
         val now = System.currentTimeMillis()
 
-        // ── Weighted outcome sum ──────────────────────────────────────
-        var weightedPositive = PRIOR_STRENGTH * PRIOR_SCORE
-        var totalWeight      = PRIOR_STRENGTH
+        // ── Bayesian Update (Beta Distribution) ───────────────────────
+        var alpha = PRIOR_ALPHA
+        var beta  = PRIOR_BETA
 
         relevant.forEach { r ->
             val ageDays = (now - r.timestampMs) / 86_400_000.0
-            val w       = exp(-DECAY_LAMBDA * ageDays)   // recency weight
-
-            // Category match gets full weight; group match gets 0.4
-            val categoryWeight = if (r.category == category) 1.0 else 0.4
+            val w       = exp(-DECAY_LAMBDA * ageDays)
+            val catW    = if (r.category == category) 1.0 else 0.4
 
             val outcome = outcomeScore(r)
-            weightedPositive += w * categoryWeight * outcome
-            totalWeight      += w * categoryWeight
+            // Map outcome to pseudo-counts
+            alpha += outcome * w * catW
+            beta  += (1.0 - outcome) * w * catW
         }
 
-        val baseScore = weightedPositive / totalWeight
+        val score = if (useSampling) {
+            thompsonSample(alpha, beta)
+        } else {
+            alpha / (alpha + beta) // Expected value
+        }
 
         // ── Fatigue penalty: recent ignores in this slot ──────────────
         val recentIgnores = records.count {
@@ -112,13 +155,102 @@ object PatternAnalyzer {
         }
         val fatiguePenalty = min(recentIgnores * 0.08, 0.35)
 
-        // ── Night penalty (hard — 23:00–06:00) ───────────────────────
-        val nightPenalty = if (hour in 23..23 || hour in 0..6) 0.70 else 0.0
+        // ── Dead Space Penalty (Learned Sleep/Inactivity) ─────────────
+        val dead = deadSpaceScore(records, hour, dayOfWeek)
+        
+        // ── Night penalty (fallback hard — 23:00–06:00) ───────────────
+        val nightPenalty = if (hour in 23..23 || hour in 0..6) 0.80 else 0.0
 
-        // ── Early morning soft penalty (07:00) ────────────────────────
-        val earlyPenalty = if (hour == 7) 0.10 else 0.0
+        return (score - fatiguePenalty - max(dead, nightPenalty)).coerceIn(0.0, 1.0)
+    }
 
-        return (baseScore - fatiguePenalty - nightPenalty - earlyPenalty).coerceIn(0.0, 1.0)
+    /**
+     * Thompson Sampling from a Beta(alpha, beta) distribution.
+     * Used for balanced exploration/exploitation.
+     */
+    private fun thompsonSample(alpha: Double, beta: Double): Double {
+        val random = Random()
+        val mean = alpha / (alpha + beta)
+        // Variance of Beta distribution
+        val variance = (alpha * beta) / ((alpha + beta) * (alpha + beta) * (alpha + beta + 1.0))
+        val stdDev = sqrt(variance)
+        
+        // Simple Gaussian approximation for sampling
+        return (mean + random.nextGaussian() * stdDev).coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * Calculates a real-time focus score based on device usage entropy.
+     * High entropy = distraction, Low entropy + high depth = flow.
+     */
+    fun focusEntropyScore(records: List<UsageRecord>): Double {
+        val now = System.currentTimeMillis()
+        val recent = records.filter { (now - it.timestampMs) < 2 * 3600_000L && it.entropy >= 0 }
+        
+        if (recent.isEmpty()) return 0.5 // Neutral
+
+        val avgEntropy = recent.map { it.entropy }.average()
+        val avgDepth   = recent.map { it.sessionDepth }.filter { it >= 0 }.average()
+
+        // 0.0 entropy = perfect focus, > 4.0 = extreme switching
+        val entropyPenalty = (avgEntropy / 4.0).coerceIn(0.0, 1.0)
+        
+        // < 10s depth = shallow, > 120s = deep
+        val depthBonus = if (avgDepth.isNaN()) 0.0 else (avgDepth / 120.0).coerceIn(0.0, 0.3)
+
+        return (0.7 - entropyPenalty + depthBonus).coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * Probability that the user is actively using the device at this hour/dow.
+     */
+    fun usageDensityScore(records: List<UsageRecord>, hour: Int, dayOfWeek: Int): Double {
+        val relevant = records.filter { it.hour == hour && it.dayOfWeek == dayOfWeek }
+        if (relevant.isEmpty()) return 0.5
+        
+        val active = relevant.count { it.screenOnMinutes > 0 || it.unlockCount > 0 }
+        return active.toDouble() / relevant.size
+    }
+
+    /**
+     * Probability that the user is using entertainment/slack apps at this time.
+     */
+    fun slackScore(records: List<UsageRecord>, hour: Int, dayOfWeek: Int): Double {
+        val relevant = records.filter { it.hour == hour && it.dayOfWeek == dayOfWeek }
+        if (relevant.isEmpty()) return 0.0
+        
+        val slackEvents = relevant.count { isSlackApp(it.activeApp) }
+        return slackEvents.toDouble() / relevant.size
+    }
+
+    /**
+     * Probability that this is a "Dead Space" (e.g. sleep) based on historical inactivity.
+     */
+    fun deadSpaceScore(records: List<UsageRecord>, hour: Int, dayOfWeek: Int): Double {
+        val relevant = records.filter { it.hour == hour && it.dayOfWeek == dayOfWeek }
+        if (relevant.size < 3) return 0.0
+        
+        // Consistent zero activity across multiple days for this slot
+        val inactiveDays = relevant.count { 
+            (it.screenOnMinutes == 0 && it.unlockCount == 0) || it.wasIdle 
+        }
+        return (inactiveDays.toDouble() / relevant.size).coerceIn(0.0, 1.0)
+    }
+
+    private fun isSlackApp(pkg: String): Boolean {
+        val slackApps = setOf(
+            "com.google.android.youtube",
+            "com.netflix.mediaclient",
+            "com.spotify.music",
+            "com.valvesoftware.android.steam.community",
+            "com.instagram.android",
+            "com.twitter.android",
+            "com.whatsapp",
+            "org.telegram.messenger",
+            "com.skype.raider",
+            "com.discord"
+        )
+        return pkg in slackApps
     }
 
     /**
@@ -184,13 +316,24 @@ object PatternAnalyzer {
             .minByOrNull { profile[it] } ?: 20
 
         val effectiveness = effectivenessScore(records)
-        val fatigued = isFatigued(records)
-        val avgResp = avgResponseMinutes(records, category)
+        val fatigued      = isFatigued(records)
+        val avgResp       = avgResponseMinutes(records, category)
 
         val sb = StringBuilder()
         sb.appendLine("Best time: ${formatHour(bestHour)}")
         sb.appendLine("Worst time: ${formatHour(worstHour)}")
         sb.appendLine("Response rate: ${(effectiveness * 100).toInt()}%")
+        
+        // --- Analytical Insights ---
+        val highSlackHour = profile.indices.maxByOrNull { slackScore(records, it, dow) } ?: -1
+        if (highSlackHour >= 0 && slackScore(records, highSlackHour, dow) > 0.4) {
+            sb.appendLine("Engagement peak: ${formatHour(highSlackHour)} (Slack window)")
+        }
+        
+        val focusScore = focusEntropyScore(records)
+        if (focusScore > 0.7) sb.appendLine("Currently in flow state 🧠")
+        else if (focusScore < 0.3) sb.appendLine("High distraction detected ⚡")
+
         if (avgResp > 0) sb.appendLine("Avg response: ${avgResp.toInt()} min")
         if (fatigued) sb.appendLine("⚠ Reducing frequency — too many ignored")
         return sb.toString().trim()

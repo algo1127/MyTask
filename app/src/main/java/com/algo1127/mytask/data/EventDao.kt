@@ -16,4 +16,7 @@ interface EventDao {
 
     @Query("DELETE FROM events WHERE id = :eventId")
     suspend fun deleteEventById(eventId: Long)
+
+    @Query("SELECT * FROM events WHERE id = :eventId")
+    suspend fun getEventById(eventId: Long): EventItem?
 }

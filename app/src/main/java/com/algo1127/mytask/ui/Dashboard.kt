@@ -47,11 +47,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -82,11 +85,7 @@ private fun horizontalPadding(): Dp {
     return if (isWideScreen()) 32.dp else 18.dp
 }
 
-@Composable
-private fun calDayWidth(): Dp {
-    val config = LocalConfiguration.current
-    return (config.screenWidthDp / 9f).coerceIn(44f, 72f).dp
-}
+// calDayWidth() removed - logic moved to BoxWithConstraints in MiniCalendar
 
 // ==================== HAPTIC HELPER ====================
 
@@ -182,7 +181,6 @@ fun DashboardScreen(
 
     val wide = isWideScreen()
     val hPad = horizontalPadding()
-    val dayWidth = calDayWidth()
 
     val uiState by viewModel.uiState.collectAsState()
     val isLoading = uiState.isLoading
@@ -191,6 +189,10 @@ fun DashboardScreen(
 
     val completedIds by viewModel.completedIds.collectAsState()
     val unscheduledTasks by viewModel.unscheduledTasks.collectAsState()
+    val activeCountdowns by viewModel.activeCountdowns.collectAsState()
+
+    var isShowingCountdowns by remember { mutableStateOf(false) }
+    var selectedCountdown by remember { mutableStateOf<com.algo1127.mytask.ui.models.CountdownItem?>(null) }
 
     // Pull-to-refresh
     val pullRefreshState = rememberPullRefreshState(
@@ -222,7 +224,7 @@ fun DashboardScreen(
         }
     }
 
-    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 3 })
+    val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
 
     val notifAi = (LocalContext.current.applicationContext as MyTaskApplication).notifAi
 
@@ -239,9 +241,8 @@ fun DashboardScreen(
     // --- NESTED SCROLL LOGIC ---
     val density = LocalDensity.current
     
-    // Dynamic height based on calendar state
-    val headerHeightBaseDp = if (calendarIsGrid) 520.dp else 350.dp
-    val headerHeightPx = with(density) { headerHeightBaseDp.toPx() }
+    var headerHeightPx by remember { mutableFloatStateOf(0f) }
+    var tabBarHeightPx by remember { mutableFloatStateOf(0f) }
     
     var headerOffsetHeightPx by remember { mutableStateOf(0f) }
 
@@ -304,7 +305,18 @@ fun DashboardScreen(
                 )
                 Column(modifier = Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
-                    ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, delayMillis = 100)
+                    ProgressCard(
+                        isLoading = isLoading, 
+                        visible = visible, 
+                        totalTasks = calendarTasks.size, 
+                        completedCount = completedCount, 
+                        progress = progress, 
+                        countdowns = activeCountdowns,
+                        isShowingCountdowns = isShowingCountdowns,
+                        onToggle = { isShowingCountdowns = !isShowingCountdowns },
+                        onCountdownClick = { /* Will implement navigation soon */ },
+                        delayMillis = 100
+                    )
                     MiniCalendar(
                         visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(),
                         onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) },
@@ -312,7 +324,7 @@ fun DashboardScreen(
                         gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it },
                         calendarRowState = calendarRowState, visibleRowDate = visibleRowDate,
                         calendarTasks = calendarTasks, calendarEvents = calendarEvents,
-                        infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, dayWidth = dayWidth,
+                        infiniteOffset = infiniteOffset, coroutineScope = coroutineScope,
                         delayMillis = 200
                     )
                 }
@@ -328,8 +340,10 @@ fun DashboardScreen(
                             selectedDate = selectedDate,
                             notifAi = notifAi,
                             completedIds = completedIds,
+                            countdowns = activeCountdowns,
                             onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) },
-                            onTaskUpdate = { viewModel.updateTask(it) }
+                            onTaskUpdate = { viewModel.updateTask(it) },
+                            onCountdownClick = { selectedCountdown = it }
                         )
                     }
                 }
@@ -342,10 +356,11 @@ fun DashboardScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .offset { IntOffset(0, headerOffsetHeightPx.toInt()) }
+                        .onGloballyPositioned { headerHeightPx = it.size.height.toFloat() }
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(Theme.BgDeep, Theme.BgMid),
-                                startY = 0f, endY = with(density) { (headerHeightBaseDp + 100.dp).toPx() }
+                                startY = 0f, endY = headerHeightPx + 200f
                             )
                         )
                         .padding(horizontal = hPad)
@@ -353,8 +368,19 @@ fun DashboardScreen(
                         .padding(top = 16.dp)
                 ) {
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
-                    ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, delayMillis = 100)
-                    Spacer(modifier = Modifier.height(18.dp))
+                    ProgressCard(
+                        isLoading = isLoading, 
+                        visible = visible, 
+                        totalTasks = calendarTasks.size, 
+                        completedCount = completedCount, 
+                        progress = progress, 
+                        countdowns = activeCountdowns,
+                        isShowingCountdowns = isShowingCountdowns,
+                        onToggle = { isShowingCountdowns = !isShowingCountdowns },
+                        onCountdownClick = { selectedCountdown = it },
+                        delayMillis = 100
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
                     MiniCalendar(
                         visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(),
                         onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) },
@@ -362,21 +388,21 @@ fun DashboardScreen(
                         gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it },
                         calendarRowState = calendarRowState, visibleRowDate = visibleRowDate,
                         calendarTasks = calendarTasks, calendarEvents = calendarEvents,
-                        infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, dayWidth = dayWidth,
+                        infiniteOffset = infiniteOffset, coroutineScope = coroutineScope,
                         delayMillis = 200
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // The pinned TabBar (stays pinned after header scrolls away)
+                // The pinned TabBar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .offset {
-                            val totalHeaderExclTab = with(density) { (headerHeightBaseDp + 10.dp).toPx() } 
-                            val y = (totalHeaderExclTab + headerOffsetHeightPx).coerceAtLeast(0f)
+                            val y = (headerHeightPx + headerOffsetHeightPx).coerceAtLeast(0f)
                             IntOffset(0, y.toInt())
                         }
+                        .onGloballyPositioned { tabBarHeightPx = it.size.height.toFloat() }
                         .background(Theme.BgMid)
                         .padding(horizontal = hPad, vertical = 8.dp)
                 ) {
@@ -389,9 +415,7 @@ fun DashboardScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .offset { 
-                            val tabHeight = with(density) { 70.dp.toPx() }
-                            val totalHeaderHeight = with(density) { (headerHeightBaseDp + 80.dp).toPx() }
-                            val currentPos = (totalHeaderHeight + headerOffsetHeightPx).coerceAtLeast(tabHeight)
+                            val currentPos = (headerHeightPx + tabBarHeightPx + headerOffsetHeightPx).coerceAtLeast(tabBarHeightPx)
                             IntOffset(0, currentPos.toInt())
                         },
                     pageSpacing = 16.dp
@@ -404,8 +428,10 @@ fun DashboardScreen(
                         selectedDate = selectedDate,
                         notifAi = notifAi,
                         completedIds = completedIds,
+                        countdowns = activeCountdowns,
                         onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) },
                         onTaskUpdate = { viewModel.updateTask(it) },
+                        onCountdownClick = { selectedCountdown = it },
                         onEditRequest = { task ->
                             taskToEdit = task
                             addTaskSource = if (task.isReminder) 0 else 1
@@ -465,6 +491,31 @@ fun DashboardScreen(
         showSettingsDialog = showSettingsDialog,
         onDismissSettings = { showSettingsDialog = false }
     )
+
+    // --- COUNTDOWN DETAIL OVERLAY ---
+    selectedCountdown?.let { countdown ->
+        var linkedInfo by remember(countdown.id) { mutableStateOf<Pair<String, TaskCategory>?>(null) }
+        
+        LaunchedEffect(countdown.linkedItemId) {
+            if (countdown.linkedItemId != null && countdown.linkedItemType != null) {
+                linkedInfo = viewModel.getLinkedItemInfo(countdown.linkedItemId, countdown.linkedItemType)
+            }
+        }
+
+        CountdownDetailScreen(
+            item = countdown,
+            linkedItemInfo = linkedInfo,
+            onDismiss = { selectedCountdown = null },
+            onEdit = { updatedCountdown ->
+                viewModel.updateCountdown(updatedCountdown)
+                selectedCountdown = updatedCountdown
+            },
+            onDelete = {
+                viewModel.deleteCountdown(countdown)
+                selectedCountdown = null
+            }
+        )
+    }
     }
 }
 
@@ -520,8 +571,20 @@ private fun DashboardHeader(today: LocalDate, visible: Boolean, onSettingsClick:
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
-private fun ProgressCard(isLoading: Boolean, visible: Boolean, totalTasks: Int, completedCount: Int, progress: Float, delayMillis: Int = 0) {
+private fun ProgressCard(
+    isLoading: Boolean, 
+    visible: Boolean, 
+    totalTasks: Int, 
+    completedCount: Int, 
+    progress: Float, 
+    countdowns: List<com.algo1127.mytask.ui.models.CountdownItem>,
+    isShowingCountdowns: Boolean,
+    onToggle: () -> Unit,
+    onCountdownClick: (com.algo1127.mytask.ui.models.CountdownItem) -> Unit,
+    delayMillis: Int = 0
+) {
     AnimatedVisibility(
         visible = visible, 
         enter = fadeIn(tween(600, delayMillis = delayMillis)) + slideInVertically(
@@ -535,37 +598,144 @@ private fun ProgressCard(isLoading: Boolean, visible: Boolean, totalTasks: Int, 
             label = "loadingAnim"
         ) { loading ->
             if (loading) { ShimmerBlock(height = 110f) } else {
+                val glowColor by animateColorAsState(
+                    targetValue = if (isShowingCountdowns) Theme.Gold else Theme.Teal,
+                    animationSpec = tween(600),
+                    label = "glowColor"
+                )
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Brush.linearGradient(colors = listOf(Theme.Teal.copy(alpha = 0.15f), Theme.BgSurface)))
+                        .clickable { onToggle() }
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(glowColor.copy(alpha = 0.15f), Theme.BgSurface)
+                            )
+                        )
                         .padding(1.dp)
                 ) {
+                    // Ambient Glow - Use matchParentSize to avoid affecting card height
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .blur(30.dp)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(glowColor.copy(alpha = 0.15f), Color.Transparent),
+                                    radius = 400f
+                                )
+                            )
+                    )
+
                     Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(23.dp)).background(Theme.CardBg).padding(20.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
-                                CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.White06, trackColor = Color.Transparent)
-                                val animProgress by animateFloatAsState(targetValue = progress, animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessLow), label = "progressAnim")
-                                CircularProgressIndicator(progress = { animProgress }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.Teal, trackColor = Color.Transparent, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("${(progress * 100).toInt()}%", color = Theme.Teal, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                                    Text("done", color = Theme.White30, fontSize = 10.sp)
+                        AnimatedContent(
+                            targetState = isShowingCountdowns,
+                            transitionSpec = { 
+                                (slideInVertically { it } + fadeIn()) togetherWith (slideOutVertically { -it } + fadeOut())
+                            },
+                            label = "cardContent"
+                        ) { showCountdowns ->
+                            if (!showCountdowns) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                                        CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.White06, trackColor = Color.Transparent)
+                                        val animProgress by animateFloatAsState(targetValue = progress, animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessLow), label = "progressAnim")
+                                        CircularProgressIndicator(progress = { animProgress }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.Teal, trackColor = Color.Transparent, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text("${(progress * 100).toInt()}%", color = Theme.Teal, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+                                            Text("done", color = Theme.White30, fontSize = 10.sp)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(20.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Daily Progress", color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(if (totalTasks == 0) "No tasks for today!" else "$completedCount / $totalTasks completed", color = Theme.White60, fontSize = 13.sp)
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                            val segments = if (totalTasks > 0) totalTasks else 5
+                                            repeat(segments) { i ->
+                                                val isFilled = i < completedCount
+                                                val segColor by animateColorAsState(targetValue = if (isFilled) Theme.Teal else Theme.White10, animationSpec = tween(500, delayMillis = i * 50), label = "seg_$i")
+                                                val segScale by animateFloatAsState(targetValue = if (isFilled) 1.1f else 1.0f, animationSpec = spring(Spring.DampingRatioHighBouncy), label = "segScale_$i")
+                                                Box(modifier = Modifier.weight(1f).height(6.dp).scale(segScale).clip(RoundedCornerShape(3.dp)).background(segColor))
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                            Spacer(modifier = Modifier.width(20.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Progress", color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(if (totalTasks == 0) "No tasks for today!" else "$completedCount / $totalTasks completed", color = Theme.White60, fontSize = 13.sp)
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                                    val segments = if (totalTasks > 0) totalTasks else 5
-                                    repeat(segments) { i ->
-                                        val isFilled = i < completedCount
-                                        val segColor by animateColorAsState(targetValue = if (isFilled) Theme.Teal else Theme.White10, animationSpec = tween(500, delayMillis = i * 50), label = "seg_$i")
-                                        val segScale by animateFloatAsState(targetValue = if (isFilled) 1.1f else 1.0f, animationSpec = spring(Spring.DampingRatioHighBouncy), label = "segScale_$i")
-                                        Box(modifier = Modifier.weight(1f).height(6.dp).scale(segScale).clip(RoundedCornerShape(3.dp)).background(segColor))
+                            } else {
+                                // Countdown Summary with Circular Charts
+                                if (countdowns.isEmpty()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                                            Icon(Icons.Default.HourglassEmpty, null, tint = Theme.White10, modifier = Modifier.size(40.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(20.dp))
+                                        Column {
+                                            Text("Countdowns", color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                            Text("No active timers", color = Theme.White30, fontSize = 13.sp)
+                                        }
+                                    }
+                                } else if (countdowns.size == 1) {
+                                    val item = countdowns.first()
+                                    val now = LocalDateTime.now()
+                                    val remaining = java.time.Duration.between(now, item.targetDateTime)
+                                    val total = java.time.Duration.between(item.createdAt, item.targetDateTime)
+                                    val countdownProgress = if (total.isZero) 1f else (1f - remaining.toMillis().toFloat() / total.toMillis().toFloat()).coerceIn(0f, 1f)
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(80.dp)) {
+                                            CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Theme.White06, trackColor = Color.Transparent)
+                                            val animP by animateFloatAsState(targetValue = countdownProgress, animationSpec = tween(1000), label = "cp")
+                                            CircularProgressIndicator(progress = { animP }, modifier = Modifier.size(80.dp), strokeWidth = 8.dp, color = Color(item.color), trackColor = Color.Transparent, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                            Icon(Icons.Default.HourglassEmpty, null, tint = Color(item.color).copy(alpha = 0.5f), modifier = Modifier.size(24.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(20.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(item.optionalTitle ?: item.title, color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                text = formatDuration(remaining),
+                                                color = Color(item.color).copy(alpha = 0.8f),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    // Multiple Countdowns: Grid of small circular charts
+                                    Column {
+                                        Text("Countdowns", color = Theme.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                        ) {
+                                            countdowns.take(4).forEach { item ->
+                                                val now = LocalDateTime.now()
+                                                val remaining = java.time.Duration.between(now, item.targetDateTime)
+                                                val total = java.time.Duration.between(item.createdAt, item.targetDateTime)
+                                                val countdownProgress = if (total.isZero) 1f else (1f - remaining.toMillis().toFloat() / total.toMillis().toFloat()).coerceIn(0f, 1f)
+
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp)) {
+                                                        CircularProgressIndicator(progress = { 1f }, modifier = Modifier.size(44.dp), strokeWidth = 4.dp, color = Theme.White06, trackColor = Color.Transparent)
+                                                        val animP by animateFloatAsState(targetValue = countdownProgress, animationSpec = tween(1000), label = "cp_${item.id}")
+                                                        CircularProgressIndicator(progress = { animP }, modifier = Modifier.size(44.dp), strokeWidth = 4.dp, color = Color(item.color), trackColor = Color.Transparent, strokeCap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                                    }
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        text = item.optionalTitle ?: item.title,
+                                                        color = Theme.White60,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        maxLines = 1,
+                                                        textAlign = TextAlign.Center
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -577,69 +747,182 @@ private fun ProgressCard(isLoading: Boolean, visible: Boolean, totalTasks: Int, 
     }
 }
 
+private fun formatDuration(duration: java.time.Duration): String {
+    val days = duration.toDays()
+    val hours = duration.toHours() % 24
+    val mins = duration.toMinutes() % 60
+    return when {
+        days > 0 -> "$days d, $hours h left"
+        hours > 0 -> "$hours h, $mins m left"
+        else -> "$mins mins left"
+    }
+}
+
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-private fun MiniCalendar(visible: Boolean, today: LocalDate, selectedEpochDay: Long, onDaySelected: (Long) -> Unit, calendarIsGrid: Boolean, onToggleGrid: () -> Unit, gridMonthOffset: Long, onGridMonthChange: (Long) -> Unit, calendarRowState: androidx.compose.foundation.lazy.LazyListState, visibleRowDate: LocalDate, calendarTasks: List<TaskItem>, calendarEvents: List<EventItem>, infiniteOffset: Int, coroutineScope: kotlinx.coroutines.CoroutineScope, dayWidth: Dp, delayMillis: Int) {
-    AnimatedVisibility(visible = visible, enter = fadeIn(tween(400, delayMillis = delayMillis)) + slideInVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialOffsetY = { 60 })) {
-        Column {
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                AnimatedContent(targetState = if (calendarIsGrid) today.withDayOfMonth(1).plusMonths(gridMonthOffset).let { "${it.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${it.year}" } else "${visibleRowDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${visibleRowDate.year}", transitionSpec = { (slideInVertically { -it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut()) }, label = "monthYearAnim") { label -> Text(label, color = Theme.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (calendarIsGrid) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onGridMonthChange(-1) }) { Icon(Icons.Default.ChevronLeft, null, tint = Theme.White60, modifier = Modifier.size(18.dp)) }
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onGridMonthChange(1) }) { Icon(Icons.Default.ChevronRight, null, tint = Theme.White60, modifier = Modifier.size(18.dp)) }
-                    } else {
-                        AnimatedVisibility(visible = visibleRowDate.month != today.month || visibleRowDate.year != today.year, enter = fadeIn(tween(200)) + scaleIn(spring(Spring.DampingRatioMediumBouncy)), exit = fadeOut(tween(150)) + scaleOut(tween(150))) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.height(26.dp).wrapContentWidth().clip(RoundedCornerShape(8.dp)).background(Theme.Teal.copy(alpha = 0.18f)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { coroutineScope.launch { calendarRowState.animateScrollToItem(infiniteOffset) }; onDaySelected(today.toEpochDay()) }.padding(horizontal = 10.dp)) { Text("Today", color = Theme.Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+private fun MiniCalendar(
+    visible: Boolean, 
+    today: LocalDate, 
+    selectedEpochDay: Long, 
+    onDaySelected: (Long) -> Unit, 
+    calendarIsGrid: Boolean, 
+    onToggleGrid: () -> Unit, 
+    gridMonthOffset: Long, 
+    onGridMonthChange: (Long) -> Unit, 
+    calendarRowState: androidx.compose.foundation.lazy.LazyListState, 
+    visibleRowDate: LocalDate, 
+    calendarTasks: List<TaskItem>, 
+    calendarEvents: List<EventItem>, 
+    infiniteOffset: Int, 
+    coroutineScope: kotlinx.coroutines.CoroutineScope, 
+    delayMillis: Int
+) {
+    BoxWithConstraints {
+        val containerWidth = maxWidth
+        val itemsToShow = if (containerWidth > 600.dp) 9 else 7
+        val dayWidth = (containerWidth / itemsToShow.toFloat()) - 8.dp // padding adjustment
+
+        AnimatedVisibility(
+            visible = visible, 
+            enter = fadeIn(tween(400, delayMillis = delayMillis)) + slideInVertically(
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), 
+                initialOffsetY = { 60 }
+            )
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), 
+                    horizontalArrangement = Arrangement.SpaceBetween, 
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AnimatedContent(
+                        targetState = if (calendarIsGrid) today.withDayOfMonth(1).plusMonths(gridMonthOffset).let { "${it.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${it.year}" } 
+                                     else "${visibleRowDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${visibleRowDate.year}", 
+                        transitionSpec = { (slideInVertically { -it } + fadeIn()) togetherWith (slideOutVertically { it } + fadeOut()) }, 
+                        label = "monthYearAnim"
+                    ) { label -> 
+                        Text(label, color = Theme.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) 
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (calendarIsGrid) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onGridMonthChange(-1) }) { Icon(Icons.Default.ChevronLeft, null, tint = Theme.White60, modifier = Modifier.size(18.dp)) }
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(30.dp).clip(RoundedCornerShape(9.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onGridMonthChange(1) }) { Icon(Icons.Default.ChevronRight, null, tint = Theme.White60, modifier = Modifier.size(18.dp)) }
+                        } else {
+                            AnimatedVisibility(visible = visibleRowDate.month != today.month || visibleRowDate.year != today.year, enter = fadeIn(tween(200)) + scaleIn(spring(Spring.DampingRatioMediumBouncy)), exit = fadeOut(tween(150)) + scaleOut(tween(150))) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.height(26.dp).wrapContentWidth().clip(RoundedCornerShape(8.dp)).background(Theme.Teal.copy(alpha = 0.18f)).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { coroutineScope.launch { calendarRowState.animateScrollToItem(infiniteOffset) }; onDaySelected(today.toEpochDay()) }.padding(horizontal = 10.dp)) { Text("Today", color = Theme.Teal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                            }
+                        }
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onToggleGrid() }) {
+                            AnimatedContent(targetState = calendarIsGrid, transitionSpec = { scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(tween(150)) togetherWith scaleOut(tween(100)) + fadeOut(tween(100)) }, label = "calToggleIcon") { isGrid -> Icon(if (isGrid) Icons.Outlined.ViewStream else Icons.Outlined.GridView, "Toggle view", tint = Theme.White60, modifier = Modifier.size(16.dp)) }
                         }
                     }
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(Theme.White06).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onToggleGrid() }) {
-                        AnimatedContent(targetState = calendarIsGrid, transitionSpec = { scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(tween(150)) togetherWith scaleOut(tween(100)) + fadeOut(tween(100)) }, label = "calToggleIcon") { isGrid -> Icon(if (isGrid) Icons.Outlined.ViewStream else Icons.Outlined.GridView, "Toggle view", tint = Theme.White60, modifier = Modifier.size(16.dp)) }
-                    }
                 }
-            }
-            AnimatedContent(targetState = calendarIsGrid, transitionSpec = { (fadeIn(tween(250)) + scaleIn(tween(250), initialScale = 0.95f)) togetherWith (fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.95f)) }, label = "calViewToggle") { isGrid ->
-                if (isGrid) {
-                    val gridBase = today.withDayOfMonth(1).plusMonths(gridMonthOffset)
-                    val daysInMonth = gridBase.lengthOfMonth()
-                    val startPadding = gridBase.dayOfWeek.value - 1
-                    Column {
-                        Row(modifier = Modifier.fillMaxWidth()) { listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su").forEach { d -> Text(d, color = Theme.White30, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center) } }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyVerticalGrid(columns = GridCells.Fixed(7), modifier = Modifier.fillMaxWidth().height(200.dp), userScrollEnabled = false, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            items(startPadding) { Box(modifier = Modifier.size(36.dp)) }
-                            items(daysInMonth) { i ->
-                                val day = gridBase.plusDays(i.toLong())
-                                val isToday = day == today
-                                val isSelected = day.toEpochDay() == selectedEpochDay
-                                val dayHasTasks = calendarTasks.any { it.date == day }
-                                val dayHasEvents = calendarEvents.any { it.date == day }
-                                val bgColor by animateColorAsState(targetValue = when { isSelected -> Theme.Teal; isToday -> Theme.White10; else -> Color.Transparent }, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "gridDay_$i")
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp).clip(CircleShape).background(bgColor).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDaySelected(day.toEpochDay()) }) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(day.dayOfMonth.toString(), color = if (isSelected) Theme.BgDeep else Theme.White, fontSize = 13.sp, fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal)
-                                        if (dayHasTasks || dayHasEvents) { Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { if (dayHasTasks) Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.6f) else Theme.Gold)); if (dayHasEvents) Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.6f) else Theme.Blue)) } }
+                AnimatedContent(
+                    targetState = calendarIsGrid, 
+                    transitionSpec = { (fadeIn(tween(250)) + scaleIn(tween(250), initialScale = 0.95f)) togetherWith (fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.95f)) }, 
+                    label = "calViewToggle"
+                ) { isGrid ->
+                    if (isGrid) {
+                        val gridBase = today.withDayOfMonth(1).plusMonths(gridMonthOffset)
+                        val daysInMonth = gridBase.lengthOfMonth()
+                        // Monday=1, ..., Sunday=7. For Mo-Su order, padding is value - 1.
+                        val startPadding = gridBase.dayOfWeek.value - 1
+                        Column {
+                            Row(modifier = Modifier.fillMaxWidth()) { 
+                                listOf("MO", "TU", "WE", "TH", "FR", "SA", "SU").forEach { d -> 
+                                    Text(d, color = Theme.White30, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center) 
+                                } 
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(7), 
+                                modifier = Modifier.fillMaxWidth().height(320.dp), // Increased for 6 rows + padding
+                                userScrollEnabled = false, 
+                                horizontalArrangement = Arrangement.spacedBy(4.dp), 
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                items(startPadding) { Box(modifier = Modifier.size(36.dp)) }
+                                items(daysInMonth) { i ->
+                                    val day = gridBase.plusDays(i.toLong())
+                                    val isToday = day == today
+                                    val isSelected = day.toEpochDay() == selectedEpochDay
+                                    val dayHasTasks = calendarTasks.any { it.date == day }
+                                    val dayHasEvents = calendarEvents.any { it.date == day }
+                                    val bgColor by animateColorAsState(targetValue = when { isSelected -> Theme.Teal; isToday -> Theme.White10; else -> Color.Transparent }, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "gridDay_$i")
+                                    Box(
+                                        contentAlignment = Alignment.Center, 
+                                        modifier = Modifier.aspectRatio(1f).clip(CircleShape).background(bgColor).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDaySelected(day.toEpochDay()) }
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Text(day.dayOfMonth.toString(), color = if (isSelected) Theme.BgDeep else Theme.White, fontSize = 13.sp, fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal)
+                                            if (dayHasTasks || dayHasEvents) { 
+                                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { 
+                                                    if (dayHasTasks) Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.6f) else Theme.Gold)); 
+                                                    if (dayHasEvents) Box(modifier = Modifier.size(3.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.6f) else Theme.Blue)) 
+                                                } 
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                } else {
-                    LazyRow(state = calendarRowState, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 2.dp)) {
-                        items(count = 20_000) { index ->
-                            val day = today.plusDays((index - infiniteOffset).toLong())
-                            val isToday = day == today
-                            val isSelected = day.toEpochDay() == selectedEpochDay
-                            val weekday = day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()).take(2).uppercase()
-                            val dayHasTasks = calendarTasks.any { it.date == day }
-                            val dayHasEvents = calendarEvents.any { it.date == day }
-                            val scale by animateFloatAsState(targetValue = if (isSelected) 1.08f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium), label = "calDay_$index")
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(dayWidth).scale(scale).clip(RoundedCornerShape(14.dp)).background(when { isSelected -> Brush.verticalGradient(colors = listOf(Theme.Teal, Color(0xFF00C9A7))); isToday -> Brush.verticalGradient(colors = listOf(Theme.White10, Theme.White06)); else -> Brush.verticalGradient(colors = listOf(Theme.White06, Theme.White03)) }).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDaySelected(day.toEpochDay()) }.padding(vertical = 10.dp)) {
-                                Text(weekday, color = if (isSelected) Theme.BgDeep.copy(alpha = 0.7f) else Theme.White30, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(day.dayOfMonth.toString(), color = if (isSelected) Theme.BgDeep else Theme.White, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(5.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(5.dp)) { if (dayHasTasks) Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.5f) else Theme.Gold)); if (dayHasEvents) Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.5f) else Theme.Blue)) }
+                    } else {
+                        LazyRow(
+                            state = calendarRowState, 
+                            horizontalArrangement = Arrangement.spacedBy(8.dp), 
+                            modifier = Modifier.fillMaxWidth().height(110.dp), // Increased height
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                        ) {
+                            items(count = 20_000) { index ->
+                                val day = today.plusDays((index - infiniteOffset).toLong())
+                                val isToday = day == today
+                                val isSelected = day.toEpochDay() == selectedEpochDay
+                                
+                                // Explicit uppercase for all weekdays
+                                val weekday = when(day.dayOfWeek.value) {
+                                    1 -> "MO"; 2 -> "TU"; 3 -> "WE"; 4 -> "TH"; 5 -> "FR"; 6 -> "SA"; else -> "SU"
+                                }
+                                
+                                val dayHasTasks = calendarTasks.any { it.date == day }
+                                val dayHasEvents = calendarEvents.any { it.date == day }
+                                val scale by animateFloatAsState(targetValue = if (isSelected) 1.05f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "calDay_$index")
+                                
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally, 
+                                    verticalArrangement = Arrangement.Center,
+                                    modifier = Modifier
+                                        .width(dayWidth)
+                                        .fillMaxHeight()
+                                        .scale(scale)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(when { 
+                                            isSelected -> Brush.verticalGradient(colors = listOf(Theme.Teal, Color(0xFF00C9A7)))
+                                            isToday -> Brush.verticalGradient(colors = listOf(Theme.White10, Theme.White06))
+                                            else -> Brush.verticalGradient(colors = listOf(Theme.White06, Theme.White03)) 
+                                        })
+                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onDaySelected(day.toEpochDay()) }
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = day.dayOfMonth.toString(), 
+                                        color = if (isSelected) Theme.BgDeep else Theme.White, 
+                                        fontSize = 18.sp, 
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = 18.sp
+                                    )
+                                    Text(
+                                        text = weekday, 
+                                        color = if (isSelected) Theme.BgDeep.copy(alpha = 0.6f) else Theme.White30, 
+                                        fontSize = 10.sp, 
+                                        fontWeight = FontWeight.SemiBold, 
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(4.dp)) { 
+                                        if (dayHasTasks) Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.5f) else Theme.Gold)) 
+                                        if (dayHasEvents) Box(modifier = Modifier.size(4.dp).clip(CircleShape).background(if (isSelected) Theme.BgDeep.copy(alpha = 0.5f) else Theme.Blue)) 
+                                    }
+                                }
                             }
                         }
                     }
@@ -654,20 +937,57 @@ private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, cal
     AnimatedVisibility(visible = visible, enter = fadeIn(tween(400, delayMillis = delayMillis)) + slideInVertically(animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialOffsetY = { 60 })) {
         Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Theme.White06).padding(4.dp)) {
             Row(modifier = Modifier.fillMaxWidth()) {
-                listOf(Triple(0, Icons.Outlined.Schedule, "Reminders"), Triple(1, Icons.Default.Task, "Tasks"), Triple(2, Icons.Outlined.Event, "Events")).forEach { (page, icon, label) ->
+                val tabs = listOf(
+                    Triple(0, Icons.Outlined.Schedule, "Reminders"), 
+                    Triple(1, Icons.Default.Task, "Tasks"), 
+                    Triple(2, Icons.Outlined.Event, "Events"),
+                    Triple(3, Icons.Default.HourglassEmpty, "Timers")
+                )
+                tabs.forEach { (page, icon, label) ->
                     val selected = pagerState.currentPage == page
-                    val badgeCount = when (page) { 0 -> calendarTasks.count { it.isReminder }; 1 -> calendarTasks.count { !it.isReminder }; else -> calendarEvents.size }
-                    val badgeColor = when (page) { 0 -> Theme.Teal; 1 -> Theme.Purple; else -> Theme.Blue }
+                    val badgeCount = when (page) { 
+                        0 -> calendarTasks.count { it.isReminder }
+                        1 -> calendarTasks.count { !it.isReminder }
+                        2 -> calendarEvents.size 
+                        else -> 0 // Countdowns handled separately or if you want to pass them to TabBar
+                    }
+                    val badgeColor = when (page) { 0 -> Theme.Teal; 1 -> Theme.Purple; 2 -> Theme.Blue; else -> Theme.Gold }
                     val tabScale by animateFloatAsState(targetValue = if (selected) 1.03f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "tabScale_$page")
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f).scale(tabScale).clip(RoundedCornerShape(12.dp)).background(if (selected) Brush.linearGradient(colors = when (page) { 0 -> listOf(Theme.TealDim, Color(0xFF0D2E2A)); 1 -> listOf(Theme.Purple.copy(alpha = 0.15f), Theme.Purple.copy(alpha = 0.05f)); else -> listOf(Theme.BlueDim, Color(0xFF0A2330)) }) else Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent))).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { coroutineScope.launch { pagerState.animateScrollToPage(page) } }.padding(vertical = 11.dp)) {
+                    Box(
+                        contentAlignment = Alignment.Center, 
+                        modifier = Modifier
+                            .weight(1f)
+                            .scale(tabScale)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) Brush.linearGradient(colors = when (page) { 
+                                0 -> listOf(Theme.TealDim, Color(0xFF0D2E2A))
+                                1 -> listOf(Theme.Purple.copy(alpha = 0.15f), Theme.Purple.copy(alpha = 0.05f))
+                                2 -> listOf(Theme.BlueDim, Color(0xFF0A2330))
+                                else -> listOf(Theme.Gold.copy(alpha = 0.15f), Theme.Gold.copy(alpha = 0.05f)) 
+                            }) else Brush.linearGradient(colors = listOf(Color.Transparent, Color.Transparent)))
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { coroutineScope.launch { pagerState.animateScrollToPage(page) } }
+                            .padding(vertical = 10.dp)
+                    ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                            Icon(icon, label, tint = if (selected) badgeColor else Theme.White30, modifier = Modifier.size(17.dp))
-                            Spacer(modifier = Modifier.width(7.dp))
-                            Text(label, color = if (selected) Theme.White else Theme.White30, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                            Icon(icon, label, tint = if (selected) badgeColor else Theme.White30, modifier = Modifier.size(16.dp))
+                            if (selected) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = label, 
+                                    color = Theme.White, 
+                                    fontSize = 12.sp, 
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            } else {
+                                // Just show icon for unselected tabs if space is tight
+                                // But since we use weights, let's just make text very small or hidden
+                            }
                             if (badgeCount > 0) {
-                                Spacer(modifier = Modifier.width(7.dp))
-                                val badgeScale by animateFloatAsState(targetValue = if (selected) 1.15f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "badge_$page")
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(18.dp).scale(badgeScale).clip(CircleShape).background(badgeColor)) { Text(badgeCount.toString(), color = Theme.BgDeep, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(14.dp).clip(CircleShape).background(badgeColor)) { 
+                                    Text(badgeCount.toString(), color = Theme.BgDeep, fontSize = 8.sp, fontWeight = FontWeight.ExtraBold) 
+                                }
                             }
                         }
                     }
@@ -687,8 +1007,10 @@ private fun PageContent(
     selectedDate: LocalDate,
     notifAi: Any,
     completedIds: Set<Long>,
+    countdowns: List<com.algo1127.mytask.ui.models.CountdownItem>,
     onToggleCompletion: (Long, Boolean) -> Unit,
     onTaskUpdate: (TaskItem) -> Unit,
+    onCountdownClick: (com.algo1127.mytask.ui.models.CountdownItem) -> Unit,
     onEditRequest: (TaskItem) -> Unit = {},
     horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
@@ -713,6 +1035,7 @@ private fun PageContent(
                     0 -> RemindersTab(tasks = calendarTasks, selectedDate = selectedDate, notifAi = notifAi as com.algo1127.mytask.NotifAi.NotifAi, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onEditRequest = onEditRequest)
                     1 -> TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskUpdate = onTaskUpdate, onEditRequest = onEditRequest)
                     2 -> EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion)
+                    3 -> CountdownsTab(countdowns = countdowns, onClick = onCountdownClick)
                     else -> Box(modifier = Modifier.fillMaxSize())
                 }
             }

@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -254,9 +255,21 @@ fun CreationDialogs(
     }
 
     if (showAddCountdownDialog) {
+        val uiState by viewModel.uiState.collectAsState()
         AddCountdownDialog(
+            tasks = uiState.tasks,
+            events = uiState.events,
+            notifAi = notifAi,
             onDismiss = onDismissAddCountdown,
-            onAdd = { _, _ ->
+            onAdd = { title, target, color, linkedId, linkedType, optTitle ->
+                viewModel.addCountdown(
+                    title = title,
+                    target = target,
+                    color = color.toArgb(),
+                    linkedId = linkedId,
+                    linkedType = linkedType,
+                    optionalTitle = optTitle
+                )
                 android.widget.Toast.makeText(context, "Countdown started!", android.widget.Toast.LENGTH_SHORT).show()
                 onDismissAddCountdown()
             }

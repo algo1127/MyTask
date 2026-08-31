@@ -9,6 +9,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 data class DashboardUiState(
     val tasks: List<TaskItem> = emptyList(),
@@ -20,6 +21,9 @@ data class DashboardUiState(
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
     private val database = MyTaskDatabase.getDatabase(application)
     private val completionDao = database.completionDao()
+    private val countdownDao = database.countdownDao()
+    private val taskDao = database.taskDao()
+    private val eventDao = database.eventDao()
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
@@ -55,6 +59,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             records.filter { it.isDone }.map { it.itemId }.toSet()
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val activeCountdowns: StateFlow<List<com.algo1127.mytask.ui.models.CountdownItem>> = countdownDao.getAllCountdowns()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setSelectedDate(date: LocalDate) {
         if (_selectedDate.value != date) {
@@ -102,6 +109,56 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 database.taskDao().deleteTask(task)
                 refresh()
             }
+        }
+    }
+
+    // --- COUNTDOWN CRUD ---
+
+    fun addCountdown(
+        title: String, 
+        target: LocalDateTime, 
+        color: Int,
+        linkedId: Long? = null,
+        linkedType: String? = null,
+        optionalTitle: String? = null
+    ) {
+        viewModelScope.launch {
+            val item = com.algo1127.mytask.ui.models.CountdownItem(
+                title = title,
+                targetDateTime = target,
+                color = color,
+                linkedItemId = linkedId,
+                linkedItemType = linkedType,
+                optionalTitle = optionalTitle
+            )
+            countdownDao.insertCountdown(item)
+        }
+    }
+
+    fun deleteCountdown(item: com.algo1127.mytask.ui.models.CountdownItem) {
+        viewModelScope.launch {
+            countdownDao.deleteCountdown(item)
+        }
+    }
+
+    fun updateCountdown(item: com.algo1127.mytask.ui.models.CountdownItem) {
+        viewModelScope.launch {
+            countdownDao.updateCountdown(item)
+        }
+    }
+
+    suspend fun getLinkedItemInfo(id: Long, type: String): Pair<String, com.algo1127.mytask.ui.TaskCategory>? {
+        return when (type) {
+            "TASK" -> {
+                val task = taskDao.getTaskById(id)
+                task?.let { it.title to it.category }
+            }
+            "EVENT" -> {
+                val event = eventDao.getEventById(id)
+                // Events don't have TaskCategory in the current model, but let's assume a default or map it
+                event?.let { it.title to com.algo1127.mytask.ui.TaskCategory.Personal }
+            }
+            else -> null
         }
     }
 }
