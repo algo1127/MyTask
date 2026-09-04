@@ -176,16 +176,20 @@ fun CreationDialogs(
     showAddCountdownDialog: Boolean,
     onDismissAddCountdown: () -> Unit,
     showSettingsDialog: Boolean,
-    onDismissSettings: () -> Unit
+    onDismissSettings: () -> Unit,
+    onOpenAiKnowledge: () -> Unit,
+    onOpenCategoryManager: () -> Unit
 ) {
     val context = LocalContext.current
     val notifAi = (context.applicationContext as MyTaskApplication).notifAi
 
     if (showAddTaskDialog) {
+        val categories by viewModel.categories.collectAsState()
         AddTaskDialog(
             defaultDate = selectedDate,
             sourceTab = addTaskSource,
             taskToEdit = taskToEdit,
+            categories = categories,
             onDismiss = onDismissAddTask,
             onEdit = { updatedTask ->
                 onUpdateTask(updatedTask)
@@ -251,7 +255,11 @@ fun CreationDialogs(
     }
 
     if (showSettingsDialog) {
-        com.algo1127.mytask.ui.dialogs.SettingsDialog(onDismiss = onDismissSettings)
+        com.algo1127.mytask.ui.dialogs.SettingsDialog(
+            onDismiss = onDismissSettings,
+            onOpenAiKnowledge = onOpenAiKnowledge,
+            onOpenCategoryManager = onOpenCategoryManager
+        )
     }
 
     if (showAddCountdownDialog) {

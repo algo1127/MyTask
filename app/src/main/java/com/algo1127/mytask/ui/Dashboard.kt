@@ -221,6 +221,8 @@ fun DashboardScreen(
     var showAddCountdownDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showJumpToDateDialog by remember { mutableStateOf(false) }
+    var showAiKnowledge by remember { mutableStateOf(false) }
+    var showCategoryManager by remember { mutableStateOf(false) }
 
     var isFabExpanded by remember { mutableStateOf(false) }
 
@@ -330,7 +332,45 @@ fun DashboardScreen(
         }
 
         CreationMenu(isExpanded = isFabExpanded, onToggle = { isFabExpanded = !isFabExpanded }, isVisible = fabVisible, onSelect = { label -> isFabExpanded = false; when (label) { "Reminder" -> { addTaskSource = 0; showAddTaskDialog = true }; "Task" -> { addTaskSource = 1; showAddTaskDialog = true }; "Event" -> { showAddEventDialog = true }; "Countdown" -> { showAddCountdownDialog = true } } }, haptic = haptic, bottomInset = bottomInset)
-        CreationDialogs(selectedDate = selectedDate, showAddTaskDialog = showAddTaskDialog, addTaskSource = addTaskSource, taskToEdit = taskToEdit, onDismissAddTask = { showAddTaskDialog = false; taskToEdit = null }, onUpdateTask = { viewModel.updateTask(it) }, viewModel = viewModel, coroutineScope = coroutineScope, showAddEventDialog = showAddEventDialog, onDismissAddEvent = { showAddEventDialog = false }, showAddCountdownDialog = showAddCountdownDialog, onDismissAddCountdown = { showAddCountdownDialog = false }, showSettingsDialog = showSettingsDialog, onDismissSettings = { showSettingsDialog = false })
+        CreationDialogs(
+            selectedDate = selectedDate, 
+            showAddTaskDialog = showAddTaskDialog, 
+            addTaskSource = addTaskSource, 
+            taskToEdit = taskToEdit, 
+            onDismissAddTask = { showAddTaskDialog = false; taskToEdit = null }, 
+            onUpdateTask = { viewModel.updateTask(it) }, 
+            viewModel = viewModel, 
+            coroutineScope = coroutineScope, 
+            showAddEventDialog = showAddEventDialog, 
+            onDismissAddEvent = { showAddEventDialog = false }, 
+            showAddCountdownDialog = showAddCountdownDialog, 
+            onDismissAddCountdown = { showAddCountdownDialog = false }, 
+            showSettingsDialog = showSettingsDialog, 
+            onDismissSettings = { showSettingsDialog = false },
+            onOpenAiKnowledge = { showAiKnowledge = true },
+            onOpenCategoryManager = { showCategoryManager = true }
+        )
+
+        if (showAiKnowledge) {
+            val knowledge by viewModel.aiKnowledge.collectAsState()
+            knowledge?.let {
+                AiKnowledgeScreen(
+                    knowledge = it,
+                    onDismiss = { showAiKnowledge = false }
+                )
+            }
+        }
+
+        if (showCategoryManager) {
+            val categories by viewModel.categories.collectAsState()
+            CategoryManagerScreen(
+                categories = categories,
+                onAdd = { label, icon, color -> viewModel.addCategory(label, icon, color) },
+                onUpdate = { viewModel.updateCategory(it) },
+                onDelete = { viewModel.deleteCategory(it) },
+                onDismiss = { showCategoryManager = false }
+            )
+        }
 
         if (showJumpToDateDialog) {
             val dpState = rememberDatePickerState(initialSelectedDate = selectedDate)

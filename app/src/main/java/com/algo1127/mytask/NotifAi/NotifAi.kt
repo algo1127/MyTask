@@ -8,6 +8,8 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import com.algo1127.mytask.NotifAi.model.NotificationAction
 import com.algo1127.mytask.NotifAi.persistence.Persistence
+import com.algo1127.mytask.ui.AiKnowledge
+import com.algo1127.mytask.ui.CategoryInsight
 import com.algo1127.mytask.ui.TaskCategory
 import com.algo1127.mytask.ui.models.*
 import kotlinx.coroutines.CoroutineScope
@@ -76,6 +78,34 @@ class NotifAi(private val context: Context) {
         val tomorrow = LocalDate.now().plusDays(1).atStartOfDay()
         // Find best time starting from the beginning of tomorrow
         return learningEngine.getBestTime(category, mode = AnalysisMode.REMINDER_SENT, anchor = tomorrow)
+    }
+
+    fun getAiKnowledge(currentCategories: List<TaskCategory>): AiKnowledge {
+        val allRecords = learningEngine.tracker.getAll()
+        val effectiveness = if (learningEngine.hasEnoughData()) {
+            PatternAnalyzer.effectivenessScore(allRecords).toFloat()
+        } else trustScore
+
+        val entropyScore = PatternAnalyzer.focusEntropyScore(allRecords).toFloat()
+        
+        val insights = currentCategories.map { cat ->
+            CategoryInsight(
+                label = cat.label,
+                iconName = cat.iconName,
+                colorHex = cat.colorHex,
+                summary = learningEngine.insightSummary(cat),
+                hourlyProfile = learningEngine.hourlyProfile(cat)
+            )
+        }
+
+        return AiKnowledge(
+            trustScore = trustScore,
+            dataPoints = learningEngine.dataPointCount(),
+            effectiveness = effectiveness,
+            focusEntropy = entropyScore,
+            mood = mood.name,
+            categoryInsights = insights
+        )
     }
 
     // ── Notification sending ──────────────────────────────────────────
@@ -183,9 +213,9 @@ class NotifAi(private val context: Context) {
         // If user is in deep focus (high entropy score), lower intensity to respect flow.
         val entropyModifier = (1.2f - (entropyScore - 0.5f)).coerceIn(0.7f, 1.3f)
 
-        val categoryModifier = when (task.category) {
-            TaskCategory.Work, TaskCategory.Study -> 1.1f
-            else                                  -> 1.0f
+        val categoryModifier = when (task.category.label) {
+            "Work", "Study" -> 1.1f
+            else            -> 1.0f
         }
 
         return (deadlineFactor * progressFactor * trustModifier * categoryModifier * entropyModifier)

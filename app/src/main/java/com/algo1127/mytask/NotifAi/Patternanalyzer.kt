@@ -366,10 +366,10 @@ object PatternAnalyzer {
      * Groups categories so sparse-data categories can borrow signal
      * from related ones.  E.g. Work & Study share patterns.
      */
-    private fun categoryGroup(cat: TaskCategory): Int = when (cat) {
-        TaskCategory.Work, TaskCategory.Study -> 1
-        TaskCategory.Personal                  -> 2
-        else                                   -> 3
+    private fun categoryGroup(cat: TaskCategory): Int = when (cat.label) {
+        "Work", "Study" -> 1
+        "Personal"      -> 2
+        else            -> 3
     }
 
     private fun formatHour(h: Int): String {

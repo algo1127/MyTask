@@ -39,6 +39,7 @@ fun AddTaskDialog(
     defaultDate: LocalDate,
     sourceTab: Int = 1,          // 0 = Reminders (teal), 1 = Tasks (purple)
     taskToEdit: TaskItem? = null,
+    categories: List<TaskCategory> = TaskCategory.values(),
     onDismiss: () -> Unit,
     onAdd: (
         title: String,
@@ -62,7 +63,7 @@ fun AddTaskDialog(
     var title            by remember { mutableStateOf(taskToEdit?.title ?: "") }
     var description      by remember { mutableStateOf("") } // TaskItem currently doesn't have description, but model does. 
                                                            // For now we use local state.
-    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: TaskCategory.Study) }
+    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: categories.firstOrNull() ?: TaskCategory.Study) }
     var selectedDate     by remember { mutableStateOf(taskToEdit?.date ?: defaultDate) }
     var timePreference   by remember { 
         mutableStateOf<TimePreference>(
@@ -144,7 +145,8 @@ fun AddTaskDialog(
                 CategorySelector(
                     selected    = selectedCategory,
                     onSelected  = { selectedCategory = it },
-                    accentColor = accentColor
+                    accentColor = accentColor,
+                    categories  = categories
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -356,7 +358,8 @@ private fun textFieldColors(accentColor: Color) = OutlinedTextFieldDefaults.colo
 private fun CategorySelector(
     selected:    TaskCategory,
     onSelected:  (TaskCategory) -> Unit,
-    accentColor: Color
+    accentColor: Color,
+    categories:  List<TaskCategory>
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -382,7 +385,7 @@ private fun CategorySelector(
             containerColor    = Theme.BgSurface,
             shape             = RoundedCornerShape(14.dp)
         ) {
-            for (cat in TaskCategory.values()) {
+            for (cat in categories) {
                 DropdownMenuItem(
                     text    = { Text(cat.label, color = Theme.White80, fontSize = 14.sp) },
                     onClick = { onSelected(cat); expanded = false },

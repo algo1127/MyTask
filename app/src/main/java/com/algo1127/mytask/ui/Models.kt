@@ -24,20 +24,48 @@ data class EventItem(
     val startTime: String,
     val endTime: String,
     val location: String,
-    val notes: String = "",   // ← add this
+    val notes: String = "",
     val date: LocalDate,
     val id: Long = System.nanoTime()
 )
 
-enum class TaskCategory(
-    val icon: ImageVector,
-    val color: Color,
-    val label: String
+data class TaskCategory(
+    val id: Long = 0,
+    val label: String,
+    val iconName: String,
+    val colorHex: String
 ) {
-    Design(Icons.Default.Brush, Color(0xFFFFBD2E), "Design"),
-    Study(Icons.Default.School, Color(0xFF4DFFD2), "Study"),
-    Personal(Icons.Default.Favorite, Color(0xFFB57BFF), "Personal"),
-    Work(Icons.Default.Business, Color(0xFF3FC3F7), "Work")
+    val icon: ImageVector get() = CategoryUtils.getIcon(iconName)
+    val color: Color get() = CategoryUtils.hexToColor(colorHex)
 
+    companion object {
+        // Default instances for compatibility and initial state
+        val Design = TaskCategory(1, "Design", "Brush", "#FFFFBD2E")
+        val Study = TaskCategory(2, "Study", "School", "#FF4DFFD2")
+        val Personal = TaskCategory(3, "Personal", "Favorite", "#FFB57BFF")
+        val Work = TaskCategory(4, "Work", "Business", "#FF3FC3F7")
 
+        fun values() = listOf(Design, Study, Personal, Work)
+        
+        fun valueOf(name: String): TaskCategory {
+            return values().find { it.label == name } ?: Work
+        }
+    }
 }
+
+data class AiKnowledge(
+    val trustScore: Float,
+    val dataPoints: Int,
+    val effectiveness: Float,
+    val focusEntropy: Float,
+    val mood: String,
+    val categoryInsights: List<CategoryInsight>
+)
+
+data class CategoryInsight(
+    val label: String,
+    val iconName: String,
+    val colorHex: String,
+    val summary: String,
+    val hourlyProfile: FloatArray // 24 floats (0-1)
+)

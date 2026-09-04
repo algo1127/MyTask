@@ -136,10 +136,15 @@ class Converters {
     fun toVerificationStatus(value: String): VerificationStatus = VerificationStatus.valueOf(value)
 
     @TypeConverter
-    fun fromTaskCategory(value: TaskCategory): String = value.name
+    fun fromTaskCategory(value: TaskCategory): String = gson.toJson(value)
 
     @TypeConverter
-    fun toTaskCategory(value: String): TaskCategory = TaskCategory.valueOf(value)
+    fun toTaskCategory(value: String): TaskCategory = try {
+        gson.fromJson(value, TaskCategory::class.java)
+    } catch (e: Exception) {
+        // Fallback for legacy enum names
+        TaskCategory.valueOf(value)
+    }
 
     @TypeConverter
     fun fromSubtaskList(value: List<Subtask>): String = gson.toJson(value)

@@ -215,11 +215,12 @@ class PhraseList {
 
     // ==================== CATEGORY PHRASE HELPER ====================
     private fun getCategoryPhrase(category: TaskCategory): String? {
-        return when (category) {
-            TaskCategory.Study -> studyPhrases.random()
-            TaskCategory.Work -> workPhrases.random()
-            TaskCategory.Personal -> personalPhrases.random()
-            TaskCategory.Design -> designPhrases.random()
+        return when (category.label) {
+            "Study" -> studyPhrases.random()
+            "Work" -> workPhrases.random()
+            "Personal" -> personalPhrases.random()
+            "Design" -> designPhrases.random()
+            else -> null
         }
     }
 

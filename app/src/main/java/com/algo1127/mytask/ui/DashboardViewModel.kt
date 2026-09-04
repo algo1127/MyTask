@@ -26,6 +26,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private val countdownDao = database.countdownDao()
     private val taskDao = database.taskDao()
     private val eventDao = database.eventDao()
+    private val categoryDao = database.categoryDao()
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
     val selectedDate: StateFlow<LocalDate> = _selectedDate.asStateFlow()
@@ -83,6 +84,61 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     val activeCountdowns: StateFlow<List<com.algo1127.mytask.ui.models.CountdownItem>> = countdownDao.getAllCountdowns()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val categories: StateFlow<List<TaskCategory>> = categoryDao.getAllCategories()
+        .map { list ->
+            if (list.isEmpty()) {
+                // Seed initial categories if none exist
+                seedDefaultCategories()
+                TaskCategory.values()
+            } else {
+                list.map { it.toUiModel() }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TaskCategory.values())
+
+    val aiKnowledge: StateFlow<AiKnowledge?> = combine(categories, _refreshTrigger) { cats, _ -> 
+        getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.getAiKnowledge(cats) 
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private fun seedDefaultCategories() {
+        viewModelScope.launch {
+            TaskCategory.values().forEach {
+                categoryDao.insert(it.toEntity())
+            }
+        }
+    }
+
+    private fun com.algo1127.mytask.data.Category.toUiModel() = TaskCategory(
+        id = id,
+        label = label,
+        iconName = iconName,
+        colorHex = colorHex
+    )
+
+    private fun TaskCategory.toEntity() = com.algo1127.mytask.data.Category(
+        label = label,
+        iconName = iconName,
+        colorHex = colorHex
+    )
+
+    fun addCategory(label: String, iconName: String, colorHex: String) {
+        viewModelScope.launch {
+            categoryDao.insert(com.algo1127.mytask.data.Category(label = label, iconName = iconName, colorHex = colorHex))
+        }
+    }
+
+    fun updateCategory(category: TaskCategory) {
+        viewModelScope.launch {
+            categoryDao.update(com.algo1127.mytask.data.Category(id = category.id, label = category.label, iconName = category.iconName, colorHex = category.colorHex))
+        }
+    }
+
+    fun deleteCategory(category: TaskCategory) {
+        viewModelScope.launch {
+            categoryDao.delete(com.algo1127.mytask.data.Category(id = category.id, label = category.label, iconName = category.iconName, colorHex = category.colorHex))
+        }
+    }
 
     fun setSelectedDate(date: LocalDate) {
         if (_selectedDate.value != date) {

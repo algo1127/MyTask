@@ -11,8 +11,8 @@ import com.algo1127.mytask.ui.models.ReminderItem
 import com.algo1127.mytask.ui.models.Task
 
 @Database(
-    entities = [CompletionRecord::class, Task::class, ReminderItem::class, EventItem::class, CountdownItem::class],
-    version = 4,
+    entities = [CompletionRecord::class, Task::class, ReminderItem::class, EventItem::class, CountdownItem::class, Category::class],
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -22,6 +22,7 @@ abstract class MyTaskDatabase : RoomDatabase() {
     abstract fun reminderDao(): ReminderDao
     abstract fun eventDao(): EventDao
     abstract fun countdownDao(): CountdownDao
+    abstract fun categoryDao(): CategoryDao
 
     companion object {
         @Volatile

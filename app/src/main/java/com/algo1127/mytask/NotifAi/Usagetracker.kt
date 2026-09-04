@@ -146,7 +146,12 @@ class UsageTracker(context: Context) {
                     UsageRecord(
                         timestampMs    = obj.getLong("ts"),
                         event          = UsageEvent.valueOf(obj.getString("ev")),
-                        category       = TaskCategory.valueOf(obj.getString("cat")),
+                        category       = try {
+                            TaskCategory.valueOf(obj.getString("cat"))
+                        } catch (e: Exception) {
+                            // Fallback for full JSON if we decide to store it that way
+                            com.google.gson.Gson().fromJson(obj.getString("cat"), TaskCategory::class.java)
+                        },
                         taskId         = obj.getLong("tid"),
                         hour           = obj.getInt("h"),
                         minute         = obj.optInt("m", 0),
@@ -171,7 +176,7 @@ class UsageTracker(context: Context) {
             arr.put(JSONObject().apply {
                 put("ts",  r.timestampMs)
                 put("ev",  r.event.name)
-                put("cat", r.category.name)
+                put("cat", r.category.label)
                 put("tid", r.taskId)
                 put("h",   r.hour)
                 put("m",   r.minute)
