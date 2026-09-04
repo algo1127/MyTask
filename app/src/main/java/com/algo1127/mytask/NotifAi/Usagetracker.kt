@@ -147,10 +147,14 @@ class UsageTracker(context: Context) {
                         timestampMs    = obj.getLong("ts"),
                         event          = UsageEvent.valueOf(obj.getString("ev")),
                         category       = try {
-                            TaskCategory.valueOf(obj.getString("cat"))
+                            val catRaw = obj.getString("cat")
+                            if (catRaw.startsWith("{")) {
+                                com.google.gson.Gson().fromJson(catRaw, TaskCategory::class.java)
+                            } else {
+                                TaskCategory.valueOf(catRaw)
+                            }
                         } catch (e: Exception) {
-                            // Fallback for full JSON if we decide to store it that way
-                            com.google.gson.Gson().fromJson(obj.getString("cat"), TaskCategory::class.java)
+                            TaskCategory.Work
                         },
                         taskId         = obj.getLong("tid"),
                         hour           = obj.getInt("h"),
@@ -176,7 +180,7 @@ class UsageTracker(context: Context) {
             arr.put(JSONObject().apply {
                 put("ts",  r.timestampMs)
                 put("ev",  r.event.name)
-                put("cat", r.category.label)
+                put("cat", com.google.gson.Gson().toJson(r.category))
                 put("tid", r.taskId)
                 put("h",   r.hour)
                 put("m",   r.minute)

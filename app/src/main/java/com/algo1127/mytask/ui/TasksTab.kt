@@ -49,7 +49,7 @@ fun TasksTab(
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 100.dp, top = 8.dp)
+        contentPadding = PaddingValues(bottom = 100.dp, top = 12.dp)
     ) {
         if (visibleTasks.isEmpty()) {
             item {

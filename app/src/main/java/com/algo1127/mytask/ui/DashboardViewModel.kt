@@ -47,7 +47,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState(isLoading = true))
 
-    val calendarData: StateFlow<Pair<Map<LocalDate, Int>, Map<LocalDate, List<TaskItem>>>> = combine(_selectedDate, _refreshTrigger) { date, _ -> date }
+    val calendarData: StateFlow<Triple<Map<LocalDate, Int>, Map<LocalDate, Int>, Map<LocalDate, List<TaskItem>>>> = combine(_selectedDate, _refreshTrigger) { date, _ -> date }
         .flatMapLatest { date ->
             flow {
                 val start = date.minusMonths(1).withDayOfMonth(1)
@@ -56,15 +56,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 
                 val tCounts = data.first.groupBy { it.date }.mapValues { it.value.size }
                 val eCounts = data.second.groupBy { it.date }.mapValues { it.value.size }
-                val combinedCounts = (tCounts.keys + eCounts.keys).associateWith { 
-                    (tCounts[it] ?: 0) + (eCounts[it] ?: 0) 
-                }
-                
                 val tAgendas = data.first.groupBy { it.date }
                 
-                emit(combinedCounts to tAgendas)
+                emit(Triple(tCounts, eCounts, tAgendas))
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap<LocalDate, Int>() to emptyMap())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Triple(emptyMap(), emptyMap(), emptyMap()))
 
     val unscheduledTasks: StateFlow<List<com.algo1127.mytask.ui.models.Task>> = _refreshTrigger
         .flatMapLatest { 
@@ -198,7 +194,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 time = "09:00",
                 category = task.category,
                 date = date,
-                isReminder = false
+                isReminder = false,
+                notes = task.description
             )
             val id = CalendarUtils.addTaskToCalendar(getApplication(), taskItem)
             if (id != null) {

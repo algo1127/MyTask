@@ -64,12 +64,23 @@ class CalendarReader(private val context: Context) {
 
                 if (isTask || isReminder) {
                     val category = extractCategory(description)
-                    // Strip markers from notes
+                    // Strip markers from notes using both legacy and new separators
                     val cleanNotes = description
+                        .replace(Regex("\\|::\\|TYPE:(TASK|REMINDER)"), "")
                         .replace(Regex("\\|\\|TYPE:(TASK|REMINDER)"), "")
+                        .replace(Regex("\\|::\\|CAT_LABEL:.*?(\\|::\\||$)"), "")
+                        .replace(Regex("\\|::\\|CAT_ICON:.*?(\\|::\\||$)"), "")
+                        .replace(Regex("\\|::\\|CAT_COLOR:.*?(\\|::\\||$)"), "")
+                        .replace(Regex("\\|\\|CAT_LABEL:.*?(\\|\\||$)"), "")
+                        .replace(Regex("\\|\\|CAT_ICON:.*?(\\|\\||$)"), "")
+                        .replace(Regex("\\|\\|CAT_COLOR:.*?(\\|\\||$)"), "")
                         .replace(Regex("\\|\\|CATEGORY:.*?(\\|\\||$)"), "")
+                        .replace("|::|URGENT:TRUE", "")
+                        .replace("|::|IMPORTANT:TRUE", "")
                         .replace("||URGENT:TRUE", "")
                         .replace("||IMPORTANT:TRUE", "")
+                        .replace("TYPE:TASK", "")
+                        .replace("TYPE:REMINDER", "")
                         .trim()
 
                     tasks.add(
@@ -128,12 +139,41 @@ class CalendarReader(private val context: Context) {
     }
 
     private fun extractCategory(description: String): TaskCategory {
+        // 1. Try to parse the new robust format (Label, Icon, and Color) with unique separator
+        if (description.contains("|::|CAT_LABEL:")) {
+            try {
+                val label = description.substringAfter("|::|CAT_LABEL:").substringBefore("|::|").trim()
+                val icon = description.substringAfter("|::|CAT_ICON:").substringBefore("|::|").trim()
+                val color = description.substringAfter("|::|CAT_COLOR:").substringBefore("|::|").trim()
+                
+                if (label.isNotBlank() && icon.isNotBlank() && color.isNotBlank()) {
+                    return TaskCategory(label = label, iconName = icon, colorHex = color)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("CalendarReader", "Failed to parse robust category format: ${e.message}")
+            }
+        }
+        
+        // 2. Legacy support for || format
+        if (description.contains("||CAT_LABEL:")) {
+            try {
+                val label = description.substringAfter("||CAT_LABEL:").substringBefore("||").trim()
+                val icon = description.substringAfter("||CAT_ICON:").substringBefore("||").trim()
+                val color = description.substringAfter("||CAT_COLOR:").substringBefore("||").trim()
+                
+                if (label.isNotBlank() && icon.isNotBlank() && color.isNotBlank()) {
+                    return TaskCategory(label = label, iconName = icon, colorHex = color)
+                }
+            } catch (e: Exception) { /* ignore */ }
+        }
+
+        // 3. Fallback to legacy markers for default categories
         return when {
             description.contains("||CATEGORY:Study") -> TaskCategory.Study
             description.contains("||CATEGORY:Personal") -> TaskCategory.Personal
             description.contains("||CATEGORY:Design") -> TaskCategory.Design
             description.contains("||CATEGORY:Work") -> TaskCategory.Work
-            // Legacy fallbacks
+            // Legacy fallbacks from older versions
             description.contains("Category: Study") -> TaskCategory.Study
             description.contains("Category: Personal") -> TaskCategory.Personal
             description.contains("Category: Design") -> TaskCategory.Design

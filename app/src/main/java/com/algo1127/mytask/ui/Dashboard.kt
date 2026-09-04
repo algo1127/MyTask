@@ -198,7 +198,8 @@ fun DashboardScreen(
     val calendarTasks = uiState.tasks
     val calendarEvents = uiState.events
     val taskCounts = calendarData.first
-    val taskAgendas = calendarData.second
+    val eventCounts = calendarData.second
+    val taskAgendas = calendarData.third
 
     val completedIds by viewModel.completedIds.collectAsState()
     val unscheduledTasks by viewModel.unscheduledTasks.collectAsState()
@@ -293,7 +294,7 @@ fun DashboardScreen(
                 Column(modifier = Modifier.width(300.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
                     ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, countdowns = activeCountdowns, isShowingCountdowns = isShowingCountdowns, onToggle = { isShowingCountdowns = !isShowingCountdowns }, onCountdownClick = { selectedCountdown = it }, delayMillis = 100)
-                    MiniCalendar(visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(), onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) }, calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L }, gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it }, onResetMonth = { gridMonthOffset = 0L }, calendarRowState = calendarRowState, taskCounts = taskCounts, taskAgendas = taskAgendas, infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, delayMillis = 200, onJumpToDateRequest = { showJumpToDateDialog = true })
+                    MiniCalendar(visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(), onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) }, calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L }, gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it }, onResetMonth = { gridMonthOffset = 0L }, calendarRowState = calendarRowState, taskCounts = taskCounts, eventCounts = eventCounts, taskAgendas = taskAgendas, infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, delayMillis = 200, onJumpToDateRequest = { showJumpToDateDialog = true })
                 }
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
@@ -311,7 +312,7 @@ fun DashboardScreen(
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
                     ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, countdowns = activeCountdowns, isShowingCountdowns = isShowingCountdowns, onToggle = { isShowingCountdowns = !isShowingCountdowns }, onCountdownClick = { selectedCountdown = it }, delayMillis = 100)
                     Spacer(modifier = Modifier.height(20.dp))
-                    MiniCalendar(visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(), onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) }, calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L }, gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it }, onResetMonth = { gridMonthOffset = 0L }, calendarRowState = calendarRowState, taskCounts = taskCounts, taskAgendas = taskAgendas, infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, delayMillis = 200, onJumpToDateRequest = { showJumpToDateDialog = true })
+                    MiniCalendar(visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(), onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) }, calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L }, gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it }, onResetMonth = { gridMonthOffset = 0L }, calendarRowState = calendarRowState, taskCounts = taskCounts, eventCounts = eventCounts, taskAgendas = taskAgendas, infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, delayMillis = 200, onJumpToDateRequest = { showJumpToDateDialog = true })
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 Box(modifier = Modifier.fillMaxWidth().offset { val y = (headerOffsetHeightPx + headerHeightPx).coerceAtLeast(0f); IntOffset(0, y.toInt()) }.onGloballyPositioned { tabBarHeightPx = it.size.height.toFloat() }.background(Theme.BgMid).padding(horizontal = hPad, vertical = 8.dp)) {
@@ -639,7 +640,7 @@ private fun MiniCalendar(
     visible: Boolean, today: LocalDate, selectedEpochDay: Long, onDaySelected: (Long) -> Unit, 
     calendarIsGrid: Boolean, onToggleGrid: () -> Unit, gridMonthOffset: Long, onGridMonthChange: (Long) -> Unit, 
     onResetMonth: () -> Unit, calendarRowState: androidx.compose.foundation.lazy.LazyListState, 
-    taskCounts: Map<LocalDate, Int>, taskAgendas: Map<LocalDate, List<TaskItem>>, 
+    taskCounts: Map<LocalDate, Int>, eventCounts: Map<LocalDate, Int>, taskAgendas: Map<LocalDate, List<TaskItem>>, 
     infiniteOffset: Int, coroutineScope: kotlinx.coroutines.CoroutineScope, delayMillis: Int, onJumpToDateRequest: () -> Unit
 ) {
     BoxWithConstraints {
@@ -745,14 +746,16 @@ private fun MiniCalendar(
                                                         label = "gridDayAnim"
                                                     )
                                                     
-                                                    val workload = (taskCounts[day] ?: 0).coerceIn(0, 10)
+                                                    val tCount = taskCounts[day] ?: 0
+                                                    val eCount = eventCounts[day] ?: 0
+                                                    val workload = (tCount + eCount * 2).coerceIn(0, 10)
                                                     DayItem(
                                                         day = day, 
                                                         isSelected = isS, 
                                                         isToday = isT, 
                                                         weekday = "", 
-                                                        taskCount = taskCounts[day] ?: 0, 
-                                                        eventCount = 0, 
+                                                        taskCount = tCount, 
+                                                        eventCount = eCount, 
                                                         workload = workload, 
                                                         dayAgenda = taskAgendas[day] ?: emptyList(), 
                                                         scale = scale, 
@@ -789,9 +792,10 @@ private fun MiniCalendar(
                                     val isT = day == today; val isS = day.toEpochDay() == selectedEpochDay
                                     val weekday = when(day.dayOfWeek.value) { 1 -> "MO"; 2 -> "TU"; 3 -> "WE"; 4 -> "TH"; 5 -> "FR"; 6 -> "SA"; else -> "SU" }
                                     val tCount = taskCounts[day] ?: 0
-                                    val workload = tCount.coerceIn(0, 10)
+                                    val eCount = eventCounts[day] ?: 0
+                                    val workload = (tCount + eCount * 2).coerceIn(0, 10)
                                     val scale by animateFloatAsState(targetValue = if (isS) 1.05f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "calDay_$index")
-                                    DayItem(day = day, isSelected = isS, isToday = isT, weekday = weekday, taskCount = tCount, eventCount = 0, workload = workload, dayAgenda = taskAgendas[day] ?: emptyList(), scale = scale, width = dayWidth, onClick = { onDaySelected(day.toEpochDay()) })
+                                    DayItem(day = day, isSelected = isS, isToday = isT, weekday = weekday, taskCount = tCount, eventCount = eCount, workload = workload, dayAgenda = taskAgendas[day] ?: emptyList(), scale = scale, width = dayWidth, onClick = { onDaySelected(day.toEpochDay()) })
                                 }
                             }
                         }

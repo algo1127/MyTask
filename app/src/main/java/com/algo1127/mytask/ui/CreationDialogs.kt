@@ -195,7 +195,7 @@ fun CreationDialogs(
                 onUpdateTask(updatedTask)
                 onDismissAddTask()
             },
-            onAdd = { title, timePref, category, date, _, repetition ->
+            onAdd = { title, timePref, category, date, description, repetition ->
                 val timeString = when (timePref) {
                     is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)
                     TimePreference.LaterToday -> {
@@ -207,7 +207,14 @@ fun CreationDialogs(
                     is TimePreference.Window -> String.format(Locale.US, "%02d:00", timePref.startHour)
                 }
 
-                val task = TaskItem(title = title, time = timeString, category = category, date = date, isReminder = (addTaskSource == 0))
+                val task = TaskItem(
+                    title = title, 
+                    time = timeString, 
+                    category = category, 
+                    date = date, 
+                    isReminder = (addTaskSource == 0),
+                    notes = description ?: ""
+                )
                 val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
                 
                 val id = CalendarUtils.addTaskToCalendar(context, task, rrule)

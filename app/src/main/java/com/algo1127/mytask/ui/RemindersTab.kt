@@ -101,11 +101,18 @@ private fun ReminderRow(
         label = "reminderScale"
     )
     
-    val bgAlpha by animateFloatAsState(if (isCompleted) 0.12f else 1f, label = "bgAlpha")
     val decoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
 
     Surface(
-        modifier = modifier.fillMaxWidth().scale(scale).clip(RoundedCornerShape(18.dp)),
+        modifier = modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { isTapped = true; onClick() },
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent
     ) {
@@ -117,12 +124,6 @@ private fun ReminderRow(
                         Brush.linearGradient(colors = listOf(Theme.Teal.copy(alpha = 0.12f), Theme.TealDim.copy(alpha = 0.08f)))
                     else
                         Brush.linearGradient(colors = listOf(Theme.CardBg, Theme.CardBg))
-                )
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { isTapped = true; onClick() },
-                    onLongClick = onLongClick
                 )
         ) {
             Box(

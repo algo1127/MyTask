@@ -34,10 +34,15 @@ object CalendarUtils {
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
 
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
-                var description = if (task.notes.isNotBlank()) "${task.notes}||TYPE:$typeMarker" else "||TYPE:$typeMarker"
-                description += "||CATEGORY:${task.category.label}"
-                if (task.isUrgent) description += "||URGENT:TRUE"
-                if (task.isImportant) description += "||IMPORTANT:TRUE"
+                var description = if (task.notes.isNotBlank()) "${task.notes}|::|TYPE:$typeMarker" else "TYPE:$typeMarker"
+                
+                // Serialize full category data using unique separators
+                description += "|::|CAT_LABEL:${task.category.label}"
+                description += "|::|CAT_ICON:${task.category.iconName}"
+                description += "|::|CAT_COLOR:${task.category.colorHex}"
+                
+                if (task.isUrgent) description += "|::|URGENT:TRUE"
+                if (task.isImportant) description += "|::|IMPORTANT:TRUE"
                 put(CalendarContract.Events.DESCRIPTION, description)
 
                 put(CalendarContract.Events.HAS_ALARM, 1)
@@ -122,10 +127,15 @@ object CalendarUtils {
                 put(CalendarContract.Events.DTEND, startMillis + 30 * 60 * 1000)
                 
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
-                var description = if (task.notes.isNotBlank()) "${task.notes}||TYPE:$typeMarker" else "||TYPE:$typeMarker"
-                description += "||CATEGORY:${task.category.label}"
-                if (task.isUrgent) description += "||URGENT:TRUE"
-                if (task.isImportant) description += "||IMPORTANT:TRUE"
+                var description = if (task.notes.isNotBlank()) "${task.notes}|::|TYPE:$typeMarker" else "TYPE:$typeMarker"
+                
+                // Serialize full category data using unique separators
+                description += "|::|CAT_LABEL:${task.category.label}"
+                description += "|::|CAT_ICON:${task.category.iconName}"
+                description += "|::|CAT_COLOR:${task.category.colorHex}"
+                
+                if (task.isUrgent) description += "|::|URGENT:TRUE"
+                if (task.isImportant) description += "|::|IMPORTANT:TRUE"
                 put(CalendarContract.Events.DESCRIPTION, description)
             }
 

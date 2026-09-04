@@ -3,6 +3,7 @@ package com.algo1127.mytask.ui
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 
 object CategoryUtils {
@@ -117,13 +118,16 @@ object CategoryUtils {
     )
 
     fun colorToHex(color: Color): String {
-        return String.format("#%08X", color.value.toLong() and 0xFFFFFFFFL)
+        val argb = color.toArgb()
+        return String.format("#%08X", argb)
     }
 
     fun hexToColor(hex: String): Color {
         return try {
-            Color(android.graphics.Color.parseColor(hex))
-        } catch (_: Exception) {
+            val sanitizedHex = if (hex.startsWith("#")) hex else "#$hex"
+            Color(android.graphics.Color.parseColor(sanitizedHex))
+        } catch (e: Exception) {
+            android.util.Log.e("CategoryUtils", "Failed to parse hex color: $hex", e)
             Theme.Teal
         }
     }

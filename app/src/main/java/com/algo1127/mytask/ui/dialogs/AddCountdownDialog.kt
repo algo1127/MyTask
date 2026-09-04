@@ -28,6 +28,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -374,7 +375,7 @@ fun AddCountdownDialog(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(top = 10.dp)) {
                     Text(
-                        text = "${range.start.toInt()}:00 — ${range.endInclusive.toInt()}:00",
+                        text = "${range.start.roundToInt()}:00 — ${range.endInclusive.roundToInt()}:00",
                         color = Theme.Orange,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -386,7 +387,7 @@ fun AddCountdownDialog(
                         value = range,
                         onValueChange = { 
                             // Prevent start == end and ensure at least 1 hour difference
-                            if (it.endInclusive - it.start >= 1f) {
+                            if (it.endInclusive.roundToInt() - it.start.roundToInt() >= 1) {
                                 range = it 
                             }
                         },
