@@ -122,7 +122,8 @@ fun AddTaskDialog(
                     label         = { Text("Title", color = Theme.White60) },
                     singleLine    = true,
                     colors        = textFieldColors(accentColor),
-                    modifier      = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    shape         = RoundedCornerShape(16.dp),
+                    modifier      = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -132,7 +133,8 @@ fun AddTaskDialog(
                     onValueChange = { description = it },
                     label         = { Text("Description (optional)", color = Theme.White60) },
                     colors        = textFieldColors(accentColor),
-                    modifier      = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                    shape         = RoundedCornerShape(16.dp),
+                    modifier      = Modifier.fillMaxWidth(),
                     minLines      = 2,
                     maxLines      = 4
                 )
@@ -342,7 +344,9 @@ private fun textFieldColors(accentColor: Color) = OutlinedTextFieldDefaults.colo
     unfocusedLabelColor  = Theme.White30,
     cursorColor          = accentColor,
     focusedTextColor     = Theme.White,
-    unfocusedTextColor   = Theme.White
+    unfocusedTextColor   = Theme.White,
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent
 )
 
 // ─── Category selector ────────────────────────────────────────────────────────
@@ -367,10 +371,10 @@ private fun CategorySelector(
             label         = { Text("Category", color = Theme.White60) },
             trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
             colors        = textFieldColors(accentColor),
+            shape         = RoundedCornerShape(16.dp),
             modifier      = Modifier
                 .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
         )
         ExposedDropdownMenu(
             expanded          = expanded,

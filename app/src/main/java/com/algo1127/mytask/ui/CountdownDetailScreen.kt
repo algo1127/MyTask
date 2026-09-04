@@ -7,14 +7,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -56,11 +54,13 @@ fun CountdownDetailScreen(
         }
     }
 
-    val remaining = Duration.between(now.value, item.targetDateTime)
-    val total = Duration.between(item.createdAt, item.targetDateTime)
-    val isExpired = remaining.isNegative
-    val displayRemaining = if (isExpired) Duration.ZERO else remaining
-    val progress = if (total.isZero) 1f else (1f - remaining.toMillis().toFloat() / total.toMillis().toFloat()).coerceIn(0f, 1f)
+    val remaining by remember { derivedStateOf { Duration.between(now.value, item.targetDateTime) } }
+    val total = remember(item.id) { Duration.between(item.createdAt, item.targetDateTime) }
+    
+    val years by remember { derivedStateOf { remaining.toDays() / 365 } }
+    val isExpired by remember { derivedStateOf { remaining.isNegative } }
+    val displayRemaining by remember { derivedStateOf { if (isExpired) Duration.ZERO else remaining } }
+    val progress by remember { derivedStateOf { if (total.isZero) 1f else (1f - remaining.toMillis().toFloat() / total.toMillis().toFloat()).coerceIn(0f, 1f) } }
 
     var selectedResolution by remember { mutableStateOf(TimeResolution.MINUTES) }
     var showEditDialog by remember { mutableStateOf(false) }
@@ -70,7 +70,6 @@ fun CountdownDetailScreen(
             .fillMaxSize()
             .background(Theme.BgDeep)
     ) {
-        // Ambient background glow
         Box(
             modifier = Modifier
                 .size(400.dp)
@@ -85,7 +84,6 @@ fun CountdownDetailScreen(
                 .statusBarsPadding()
                 .padding(24.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -116,7 +114,6 @@ fun CountdownDetailScreen(
 
             Spacer(modifier = Modifier.height(40.dp))
 
-            // Title & Linked Item
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = item.optionalTitle ?: item.title,
@@ -134,12 +131,10 @@ fun CountdownDetailScreen(
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Main Timer
-            BigTimer(duration = displayRemaining, isExpired = isExpired)
+            BigTimer(duration = displayRemaining, isExpired = isExpired, years = years)
 
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Linear Progress Bar
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                 LinearProgressIndicator(
                     progress = { progress },
@@ -156,56 +151,95 @@ fun CountdownDetailScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Visual Cubes
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            val totalUnits = when(selectedResolution) {
+                TimeResolution.SECONDS -> total.seconds
+                TimeResolution.MINUTES -> total.toMinutes()
+                TimeResolution.HOURS   -> total.toHours()
+                TimeResolution.DAYS    -> total.toDays()
+            }.toInt().coerceAtLeast(1)
+
+            val unitsPassed = if (isExpired) totalUnits else when(selectedResolution) {
+                TimeResolution.SECONDS -> Duration.between(item.createdAt, now.value).seconds
+                TimeResolution.MINUTES -> Duration.between(item.createdAt, now.value).toMinutes()
+                TimeResolution.HOURS   -> Duration.between(item.createdAt, now.value).toHours()
+                TimeResolution.DAYS    -> Duration.between(item.createdAt, now.value).toDays()
+            }.toInt().coerceIn(0, totalUnits)
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column {
                     Text("Visual Units", color = Theme.White60, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "$unitsPassed / $totalUnits",
+                        color = Theme.White30,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Theme.White06)
+                        .padding(2.dp)
+                ) {
+                    val switcherWidth = 180.dp
+                    val resOptions = TimeResolution.entries
+                    val resWidth = switcherWidth / resOptions.size.toFloat()
+                    val selectedIdx = resOptions.indexOf(selectedResolution)
                     
-                    // Resolution Switcher
-                    Row(
+                    val previousIdx = remember { mutableIntStateOf(selectedIdx) }
+                    val movingRight = selectedIdx > previousIdx.intValue
+                    SideEffect { previousIdx.intValue = selectedIdx }
+
+                    val indicatorStart by animateDpAsState(
+                        targetValue = resWidth * selectedIdx,
+                        animationSpec = spring(stiffness = if (movingRight) 400f else 900f, dampingRatio = 0.8f),
+                        label = "resStart"
+                    )
+                    val indicatorEnd by animateDpAsState(
+                        targetValue = resWidth * (selectedIdx + 1),
+                        animationSpec = spring(stiffness = if (movingRight) 900f else 400f, dampingRatio = 0.8f),
+                        label = "resEnd"
+                    )
+
+                    Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Theme.White06)
-                            .padding(2.dp)
-                    ) {
-                        TimeResolution.entries.forEach { res ->
+                            .offset(x = indicatorStart)
+                            .width(indicatorEnd - indicatorStart)
+                            .height(28.dp)
+                            .background(themeColor, RoundedCornerShape(8.dp))
+                            .shadow(elevation = 6.dp, shape = RoundedCornerShape(8.dp), ambientColor = themeColor, spotColor = themeColor)
+                    )
+
+                    Row(modifier = Modifier.width(switcherWidth)) {
+                        resOptions.forEach { res ->
                             val isSelected = res == selectedResolution
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (isSelected) themeColor else Color.Transparent)
-                                    .clickable { selectedResolution = res }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .weight(1f)
+                                    .height(28.dp)
+                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { 
+                                        selectedResolution = res 
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = res.label,
                                     color = if (isSelected) Theme.BgDeep else Theme.White30,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
                     }
                 }
-                
-                val totalUnits = when(selectedResolution) {
-                    TimeResolution.SECONDS -> total.seconds
-                    TimeResolution.MINUTES -> total.toMinutes()
-                    TimeResolution.HOURS   -> total.toHours()
-                    TimeResolution.DAYS    -> total.toDays()
-                }.toInt().coerceAtLeast(1)
-
-                val unitsPassed = if (isExpired) totalUnits else when(selectedResolution) {
-                    TimeResolution.SECONDS -> Duration.between(item.createdAt, now.value).seconds
-                    TimeResolution.MINUTES -> Duration.between(item.createdAt, now.value).toMinutes()
-                    TimeResolution.HOURS   -> Duration.between(item.createdAt, now.value).toHours()
-                    TimeResolution.DAYS    -> Duration.between(item.createdAt, now.value).toDays()
-                }.toInt().coerceIn(0, totalUnits)
-
+            }
+            
+            Box(modifier = Modifier.weight(1f)) {
                 CubeGrid(
                     totalCubes = totalUnits,
                     currentValue = unitsPassed,
@@ -276,7 +310,12 @@ fun EditCountdownDialog(
                     onValueChange = { title = it },
                     label = { Text("Title", color = Theme.White60) },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Theme.Orange),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Theme.Orange,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 
@@ -312,8 +351,8 @@ fun EditCountdownDialog(
 }
 
 @Composable
-private fun BigTimer(duration: Duration, isExpired: Boolean = false) {
-    val days = duration.toDays()
+private fun BigTimer(duration: Duration, isExpired: Boolean = false, years: Long = 0) {
+    val days = duration.toDays() % 365
     val hours = duration.toHours() % 24
     val mins = duration.toMinutes() % 60
     val secs = duration.seconds % 60
@@ -329,7 +368,11 @@ private fun BigTimer(duration: Duration, isExpired: Boolean = false) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.Bottom
         ) {
-            if (days > 0) {
+            if (years > 0) {
+                TimerUnit(value = years.toString(), label = if (years == 1L) "YEAR" else "YEARS")
+                TimerSeparator()
+            }
+            if (days > 0 || years > 0) {
                 TimerUnit(value = days.toString(), label = if (days == 1L) "DAY" else "DAYS")
                 TimerSeparator()
             }
@@ -357,26 +400,47 @@ private fun TimerSeparator() {
 
 @Composable
 private fun CubeGrid(totalCubes: Int, currentValue: Int, color: Color, resolution: TimeResolution) {
-    val cubeSize = when(resolution) {
-        TimeResolution.SECONDS -> 4.dp
-        TimeResolution.MINUTES -> 8.dp
-        TimeResolution.HOURS   -> 14.dp
-        TimeResolution.DAYS    -> 24.dp
+    val cubeSize = remember(resolution) {
+        when(resolution) {
+            TimeResolution.SECONDS -> 4.dp
+            TimeResolution.MINUTES -> 8.dp
+            TimeResolution.HOURS   -> 14.dp
+            TimeResolution.DAYS    -> 24.dp
+        }
     }
-    val spacing = when(resolution) {
-        TimeResolution.SECONDS -> 2.dp
-        else -> 4.dp
+    val spacing = remember(resolution) {
+        when(resolution) {
+            TimeResolution.SECONDS -> 2.dp
+            else -> 4.dp
+        }
     }
+
+    val listState = rememberLazyListState()
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
-        val cubeSizePx = with(density) { cubeSize.toPx() }
-        val spacingPx = with(density) { spacing.toPx() }
         
-        val columns = max(1, (with(density) { maxWidth.toPx() } / (cubeSizePx + spacingPx)).toInt())
-        val totalRows = ceil(totalCubes.toFloat() / columns).toInt()
+        val gridData = remember(maxWidth, totalCubes, cubeSize, spacing) {
+            val cubeSizePx = with(density) { cubeSize.toPx() }
+            val spacingPx = with(density) { spacing.toPx() }
+            val columns = max(1, (with(density) { maxWidth.toPx() } / (cubeSizePx + spacingPx)).toInt())
+            val totalRows = ceil(totalCubes.toFloat() / columns).toInt()
+            Triple(columns, totalRows, cubeSizePx to spacingPx)
+        }
+        
+        val columns = gridData.first
+        val totalRows = gridData.second
+        val (cubeSizePx, spacingPx) = gridData.third
+        val currentFillRow = currentValue / columns
+
+        LaunchedEffect(resolution) {
+            if (totalRows > 0) {
+                listState.animateScrollToItem(currentFillRow.coerceIn(0, totalRows - 1))
+            }
+        }
         
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(spacing)
         ) {

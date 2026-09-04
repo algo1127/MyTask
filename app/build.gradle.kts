@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
-    id("com.google.gms.google-services")  // Required for Firebase
 }
 
 android {
@@ -14,8 +13,8 @@ android {
         applicationId = "com.algo1127.mytask"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "Build_2026-04-13A"
+        versionCode = 25
+        versionName = "Build_2026-09-04A"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -45,10 +44,7 @@ android {
 
 
 dependencies {
-    // Firebase BoM and main database module
-    implementation(platform(libs.firebase.bom))
     implementation(libs.androidx.compose.material3.android)
-    implementation(libs.firebase.database)
     implementation(libs.androidx.work.runtime.ktx)
     // Room
     implementation(libs.androidx.room.runtime)
@@ -70,7 +66,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.compose.foundation)
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation(platform("com.google.firebase:firebase-bom:34.3.0"))
     implementation(libs.androidx.material3)
     implementation(libs.androidx.datastore.core)
 

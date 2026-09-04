@@ -84,7 +84,8 @@ fun AddEventDialog(
                     label = { Text("Event title", color = Theme.White60) },
                     singleLine = true,
                     colors = eventFieldColors(),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -98,7 +99,8 @@ fun AddEventDialog(
                         Icon(Icons.Default.LocationOn, null, tint = Theme.White30, modifier = Modifier.size(18.dp))
                     },
                     colors = eventFieldColors(),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(12.dp))
 
@@ -108,7 +110,8 @@ fun AddEventDialog(
                     onValueChange = { notes = it },
                     label = { Text("Notes (optional)", color = Theme.White60) },
                     colors = eventFieldColors(),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                     maxLines = 4
                 )
@@ -425,5 +428,7 @@ private fun eventFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedLabelColor = Theme.White30,
     cursorColor = Theme.Blue,
     focusedTextColor = Theme.White,
-    unfocusedTextColor = Theme.White
+    unfocusedTextColor = Theme.White,
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent
 )

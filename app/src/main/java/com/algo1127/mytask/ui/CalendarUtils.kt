@@ -34,7 +34,8 @@ object CalendarUtils {
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
 
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
-                var description = "Category: ${task.category.label}||TYPE:$typeMarker"
+                var description = if (task.notes.isNotBlank()) "${task.notes}||TYPE:$typeMarker" else "||TYPE:$typeMarker"
+                description += "||CATEGORY:${task.category.label}"
                 if (task.isUrgent) description += "||URGENT:TRUE"
                 if (task.isImportant) description += "||IMPORTANT:TRUE"
                 put(CalendarContract.Events.DESCRIPTION, description)
@@ -84,14 +85,18 @@ object CalendarUtils {
             val startMillis = startDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val endMillis = endDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-            // In CalendarUtils.kt - addEventToCalendar()
             val values = ContentValues().apply {
                 put(CalendarContract.Events.CALENDAR_ID, getDefaultCalendarId(context))
                 put(CalendarContract.Events.TITLE, event.title)
                 put(CalendarContract.Events.DTSTART, startMillis)
                 put(CalendarContract.Events.DTEND, endMillis)
                 put(CalendarContract.Events.EVENT_TIMEZONE, ZoneId.systemDefault().id)
-                put(CalendarContract.Events.DESCRIPTION, "Location: ${event.location}||TYPE:EVENT") // ✅ MARKER
+                put(CalendarContract.Events.EVENT_LOCATION, event.location)
+                
+                // We use ||TYPE:EVENT to distinguish our app's events
+                val description = if (event.notes.isNotBlank()) "${event.notes}||TYPE:EVENT" else "||TYPE:EVENT"
+                put(CalendarContract.Events.DESCRIPTION, description)
+                
                 if (rrule != null) {
                     put(CalendarContract.Events.RRULE, rrule)
                 }
@@ -117,7 +122,8 @@ object CalendarUtils {
                 put(CalendarContract.Events.DTEND, startMillis + 30 * 60 * 1000)
                 
                 val typeMarker = if (task.isReminder) "REMINDER" else "TASK"
-                var description = "Category: ${task.category.label}||TYPE:$typeMarker"
+                var description = if (task.notes.isNotBlank()) "${task.notes}||TYPE:$typeMarker" else "||TYPE:$typeMarker"
+                description += "||CATEGORY:${task.category.label}"
                 if (task.isUrgent) description += "||URGENT:TRUE"
                 if (task.isImportant) description += "||IMPORTANT:TRUE"
                 put(CalendarContract.Events.DESCRIPTION, description)
@@ -128,6 +134,17 @@ object CalendarUtils {
             rows > 0
         } catch (e: Exception) {
             android.util.Log.e("CalendarUtils", "Error updating task: ${e.message}")
+            false
+        }
+    }
+
+    fun deleteEventFromCalendar(context: Context, eventId: Long): Boolean {
+        return try {
+            val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+            val rows = context.contentResolver.delete(uri, null, null)
+            rows > 0
+        } catch (e: Exception) {
+            android.util.Log.e("CalendarUtils", "Error deleting event: ${e.message}")
             false
         }
     }

@@ -38,14 +38,23 @@ import java.time.format.DateTimeFormatter
 
 private enum class EventStatus { PAST, ACTIVE, UPCOMING }
 
-private fun eventStatus(startTime: String, endTime: String): EventStatus {
-    val now   = LocalTime.now()
+private fun eventStatus(eventDate: LocalDate, startTime: String, endTime: String): EventStatus {
+    val today = LocalDate.now()
+    val nowTime = LocalTime.now()
+
     val start = runCatching { LocalTime.parse(startTime) }.getOrNull() ?: return EventStatus.UPCOMING
     val end   = runCatching { LocalTime.parse(endTime)   }.getOrNull() ?: return EventStatus.UPCOMING
+
     return when {
-        now.isAfter(end)                          -> EventStatus.PAST
-        now.isAfter(start) || now == start        -> EventStatus.ACTIVE
-        else                                      -> EventStatus.UPCOMING
+        eventDate.isBefore(today) -> EventStatus.PAST
+        eventDate.isAfter(today) -> EventStatus.UPCOMING
+        else -> { // Today
+            when {
+                nowTime.isAfter(end) -> EventStatus.PAST
+                nowTime.isAfter(start) || nowTime == start -> EventStatus.ACTIVE
+                else -> EventStatus.UPCOMING
+            }
+        }
     }
 }
 
@@ -56,7 +65,8 @@ fun EventsTab(
     events: List<EventItem>, 
     selectedDate: LocalDate,
     completedIds: Set<Long>,
-    onToggleCompletion: (Long, Boolean) -> Unit
+    onToggleCompletion: (Long, Boolean) -> Unit,
+    onEventClick: (EventItem) -> Unit
 ) {
     val sorted = remember(events, selectedDate) {
         events
@@ -94,13 +104,14 @@ fun EventsTab(
             }
         } else {
             items(sorted, key = { it.id }) { event ->
-                val status = eventStatus(event.startTime, event.endTime)
+                val status = eventStatus(event.date, event.startTime, event.endTime)
                 val isCompleted = completedIds.contains(event.id)
                 MetroEventRow(
                     event = event, 
                     status = status, 
                     isCompleted = isCompleted,
                     onToggle = { onToggleCompletion(event.id, !isCompleted) },
+                    onClick = { onEventClick(event) },
                     modifier = Modifier.animateItem()
                 )
             }
@@ -114,9 +125,9 @@ private fun MetroEventRow(
     status: EventStatus,
     isCompleted: Boolean,
     onToggle: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val hasDetails = event.location.isNotBlank() || event.notes.isNotBlank()
     
     val canMarkDone = status == EventStatus.PAST
@@ -207,7 +218,7 @@ private fun MetroEventRow(
             )
 
             Surface(
-                onClick = { if (hasDetails) expanded = !expanded },
+                onClick = onClick,
                 shape = RoundedCornerShape(16.dp),
                 color = Theme.CardBg,
                 modifier = Modifier.fillMaxWidth()
@@ -298,48 +309,11 @@ private fun MetroEventRow(
 
                             if (hasDetails) {
                                 Spacer(Modifier.width(6.dp))
-                                val rotation by animateFloatAsState(
-                                    targetValue = if (expanded) 180f else 0f,
-                                    animationSpec = tween(200),
-                                    label = "chevron"
-                                )
                                 Icon(
-                                    Icons.Default.ExpandMore, null,
+                                    Icons.Default.ChevronRight, null,
                                     tint = Theme.White30,
-                                    modifier = Modifier
-                                        .size(18.dp)
-                                        .graphicsLayer { rotationZ = rotation }
+                                    modifier = Modifier.size(18.dp)
                                 )
-                            }
-                        }
-
-                        AnimatedVisibility(
-                            visible = expanded,
-                            enter = expandVertically(tween(200)) + fadeIn(tween(200)),
-                            exit  = shrinkVertically(tween(200)) + fadeOut(tween(200))
-                        ) {
-                            Column {
-                                if (event.notes.isNotBlank()) {
-                                    Spacer(Modifier.height(10.dp))
-                                    HorizontalDivider(color = Theme.White10, thickness = 0.5.dp)
-                                    Spacer(Modifier.height(10.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.Top,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Notes, null,
-                                            tint = Theme.White30,
-                                            modifier = Modifier.size(14.dp).padding(top = 1.dp)
-                                        )
-                                        Text(
-                                            event.notes,
-                                            color = Theme.White60,
-                                            fontSize = 12.sp,
-                                            lineHeight = 18.sp
-                                        )
-                                    }
-                                }
                             }
                         }
                     }

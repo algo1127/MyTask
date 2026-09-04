@@ -72,8 +72,8 @@ private fun CountdownCard(
         }
     }
 
-    val remaining = Duration.between(now.value, item.targetDateTime)
-    val isExpired = remaining.isNegative
+    val remaining by remember { derivedStateOf { Duration.between(now.value, item.targetDateTime) } }
+    val isExpired by remember { derivedStateOf { remaining.isNegative } }
 
     Surface(
         modifier = Modifier

@@ -34,7 +34,7 @@
 
         <receiver
             android:name="com.algo1127.mytask.NotifAi.Receiver"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="com.algo1127.mytask.ACTION_NOTIFICATION" />
                 <action android:name="com.algo1127.mytask.ACTION_TRIGGER_REMINDER" />

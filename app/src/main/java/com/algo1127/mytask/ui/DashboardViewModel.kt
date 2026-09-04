@@ -14,6 +14,8 @@ import java.time.LocalDateTime
 data class DashboardUiState(
     val tasks: List<TaskItem> = emptyList(),
     val events: List<EventItem> = emptyList(),
+    val taskCounts: Map<LocalDate, Int> = emptyMap(),
+    val eventCounts: Map<LocalDate, Int> = emptyMap(),
     val isLoading: Boolean = false
 )
 
@@ -43,6 +45,25 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 ))
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState(isLoading = true))
+
+    val calendarData: StateFlow<Pair<Map<LocalDate, Int>, Map<LocalDate, List<TaskItem>>>> = combine(_selectedDate, _refreshTrigger) { date, _ -> date }
+        .flatMapLatest { date ->
+            flow {
+                val start = date.minusMonths(1).withDayOfMonth(1)
+                val end = date.plusMonths(1).withDayOfMonth(date.plusMonths(1).lengthOfMonth())
+                val data = calendarReader.getItemsForRange(start, end)
+                
+                val tCounts = data.first.groupBy { it.date }.mapValues { it.value.size }
+                val eCounts = data.second.groupBy { it.date }.mapValues { it.value.size }
+                val combinedCounts = (tCounts.keys + eCounts.keys).associateWith { 
+                    (tCounts[it] ?: 0) + (eCounts[it] ?: 0) 
+                }
+                
+                val tAgendas = data.first.groupBy { it.date }
+                
+                emit(combinedCounts to tAgendas)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap<LocalDate, Int>() to emptyMap())
 
     val unscheduledTasks: StateFlow<List<com.algo1127.mytask.ui.models.Task>> = _refreshTrigger
         .flatMapLatest { 
@@ -83,12 +104,31 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 isDone = isDone
             )
             completionDao.insertOrUpdate(record)
+            refresh() // Trigger UI update
         }
     }
 
     fun updateTask(task: TaskItem) {
         viewModelScope.launch {
             val success = CalendarUtils.updateTaskInCalendar(getApplication(), task)
+            if (success) {
+                refresh()
+            }
+        }
+    }
+
+    fun deleteEvent(event: EventItem) {
+        viewModelScope.launch {
+            val success = CalendarUtils.deleteEventFromCalendar(getApplication(), event.id)
+            if (success) {
+                refresh()
+            }
+        }
+    }
+
+    fun deleteTask(taskId: Long) {
+        viewModelScope.launch {
+            val success = CalendarUtils.deleteEventFromCalendar(getApplication(), taskId)
             if (success) {
                 refresh()
             }

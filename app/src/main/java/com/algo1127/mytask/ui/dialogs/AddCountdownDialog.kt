@@ -157,7 +157,9 @@ fun AddCountdownDialog(
                                         focusedBorderColor = Theme.Orange,
                                         unfocusedBorderColor = Theme.White10,
                                         focusedTextColor = Theme.White,
-                                        unfocusedTextColor = Theme.White
+                                        unfocusedTextColor = Theme.White,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent
                                     ),
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -259,7 +261,12 @@ fun AddCountdownDialog(
                                     value = optionalTitle,
                                     onValueChange = { optionalTitle = it },
                                     placeholder = { Text(linkedName ?: "", color = Theme.White30) },
-                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = accentColor),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = accentColor,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
@@ -383,8 +390,8 @@ fun AddCountdownDialog(
                                 range = it 
                             }
                         },
-                        valueRange = 0f..23f,
-                        steps = 22,
+                        valueRange = 0f..24f,
+                        steps = 23,
                         colors = SliderDefaults.colors(
                             thumbColor = Theme.Orange,
                             activeTrackColor = Theme.Orange,

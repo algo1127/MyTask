@@ -15,7 +15,8 @@ data class TaskItem(
     val id: Long = System.nanoTime(),
     val done: Boolean = false,
     val isUrgent: Boolean = false,
-    val isImportant: Boolean = false
+    val isImportant: Boolean = false,
+    val notes: String = ""
 )
 
 data class EventItem(

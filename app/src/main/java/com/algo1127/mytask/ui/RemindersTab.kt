@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -38,6 +39,7 @@ fun RemindersTab(
     notifAi: NotifAi,
     completedIds: Set<Long>,
     onToggleCompletion: (Long, Boolean) -> Unit,
+    onTaskClick: (TaskItem) -> Unit = {},
     onEditRequest: (TaskItem) -> Unit = {}
 ) {
     val visibleTasks = remember(tasks, selectedDate) {
@@ -68,6 +70,7 @@ fun RemindersTab(
                     onToggle = {
                         onToggleCompletion(item.id, !isCompleted)
                     },
+                    onClick = { onToggleCompletion(item.id, !isCompleted) },
                     onLongClick = { onEditRequest(item) },
                     modifier = Modifier.animateItem(
                         fadeInSpec = tween(300),
@@ -85,6 +88,7 @@ private fun ReminderRow(
     item: TaskItem,
     isCompleted: Boolean,
     onToggle: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: () -> Unit = {}
 ) {
@@ -117,7 +121,7 @@ private fun ReminderRow(
                 .combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = { isTapped = true; onToggle() },
+                    onClick = { isTapped = true; onClick() },
                     onLongClick = onLongClick
                 )
         ) {
@@ -136,6 +140,7 @@ private fun ReminderRow(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp))
                         .background(if (isCompleted) Theme.Teal.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
+                        .clickable { onToggle() }
                 ) {
                     AnimatedContent(isCompleted, label = "iconAnim") { completed ->
                         Icon(
