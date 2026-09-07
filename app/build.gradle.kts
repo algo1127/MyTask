@@ -13,8 +13,8 @@ android {
         applicationId = "com.algo1127.mytask"
         minSdk = 28
         targetSdk = 36
-        versionCode = 25
-        versionName = "Build_2026-09-04A"
+        versionCode = 26
+        versionName = "Build_2026-09-07B"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,6 +38,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

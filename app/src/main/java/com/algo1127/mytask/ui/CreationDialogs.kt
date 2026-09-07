@@ -178,7 +178,8 @@ fun CreationDialogs(
     showSettingsDialog: Boolean,
     onDismissSettings: () -> Unit,
     onOpenAiKnowledge: () -> Unit,
-    onOpenCategoryManager: () -> Unit
+    onOpenCategoryManager: () -> Unit,
+    onOpenPermissions: () -> Unit
 ) {
     val context = LocalContext.current
     val notifAi = (context.applicationContext as MyTaskApplication).notifAi
@@ -262,10 +263,14 @@ fun CreationDialogs(
     }
 
     if (showSettingsDialog) {
+        val prefs by viewModel.aiPreferences.collectAsState()
         com.algo1127.mytask.ui.dialogs.SettingsDialog(
             onDismiss = onDismissSettings,
             onOpenAiKnowledge = onOpenAiKnowledge,
-            onOpenCategoryManager = onOpenCategoryManager
+            onOpenCategoryManager = onOpenCategoryManager,
+            onOpenPermissions = onOpenPermissions,
+            highReliabilityEnabled = prefs["high_reliability"] == "true",
+            onToggleHighReliability = { viewModel.setAiPreference("high_reliability", it.toString()) }
         )
     }
 
@@ -276,14 +281,15 @@ fun CreationDialogs(
             events = uiState.events,
             notifAi = notifAi,
             onDismiss = onDismissAddCountdown,
-            onAdd = { title, target, color, linkedId, linkedType, optTitle ->
+            onAdd = { title, target, color, linkedId, linkedType, optTitle, remind ->
                 viewModel.addCountdown(
                     title = title,
                     target = target,
                     color = color.toArgb(),
                     linkedId = linkedId,
                     linkedType = linkedType,
-                    optionalTitle = optTitle
+                    optionalTitle = optTitle,
+                    remindWhenUp = remind
                 )
                 android.widget.Toast.makeText(context, "Countdown started!", android.widget.Toast.LENGTH_SHORT).show()
                 onDismissAddCountdown()

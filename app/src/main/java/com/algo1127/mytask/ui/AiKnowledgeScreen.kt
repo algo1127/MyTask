@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.algo1127.mytask.NotifAi.PermissionManager
+import androidx.compose.ui.platform.LocalContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -28,6 +30,7 @@ fun AiKnowledgeScreen(
     knowledge: AiKnowledge,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize().background(Theme.BgDeep)) {
         // Shifting background glow
         Box(
@@ -56,6 +59,30 @@ fun AiKnowledgeScreen(
                 }
                 Text("AI Knowledge", color = Theme.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                 Box(modifier = Modifier.size(48.dp)) // Placeholder for balance
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            val hasUsageAccess = remember { PermissionManager.hasUsageAccess(context) }
+            Surface(
+                color = if (hasUsageAccess) Theme.Teal.copy(alpha = 0.1f) else Color.Red.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val statusColor = if (hasUsageAccess) Theme.Teal else Color.Red
+                    Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(statusColor))
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (hasUsageAccess) "AI is actively learning from your usage" else "AI is currently offline (Usage Access needed)",
+                        color = statusColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))

@@ -224,6 +224,7 @@ fun DashboardScreen(
     var showJumpToDateDialog by remember { mutableStateOf(false) }
     var showAiKnowledge by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
+    var showPermissions by remember { mutableStateOf(false) }
 
     var isFabExpanded by remember { mutableStateOf(false) }
 
@@ -349,7 +350,8 @@ fun DashboardScreen(
             showSettingsDialog = showSettingsDialog, 
             onDismissSettings = { showSettingsDialog = false },
             onOpenAiKnowledge = { showAiKnowledge = true },
-            onOpenCategoryManager = { showCategoryManager = true }
+            onOpenCategoryManager = { showCategoryManager = true },
+            onOpenPermissions = { showPermissions = true }
         )
 
         if (showAiKnowledge) {
@@ -369,7 +371,14 @@ fun DashboardScreen(
                 onAdd = { label, icon, color -> viewModel.addCategory(label, icon, color) },
                 onUpdate = { viewModel.updateCategory(it) },
                 onDelete = { viewModel.deleteCategory(it) },
+                onReorder = { viewModel.reorderCategories(it) },
                 onDismiss = { showCategoryManager = false }
+            )
+        }
+
+        if (showPermissions) {
+            PermissionsScreen(
+                onDismiss = { showPermissions = false }
             )
         }
 

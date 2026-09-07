@@ -33,17 +33,18 @@ data class TaskCategory(
     val id: Long = 0,
     val label: String,
     val iconName: String,
-    val colorHex: String
+    val colorHex: String,
+    val position: Int = 0
 ) {
     val icon: ImageVector get() = CategoryUtils.getIcon(iconName)
     val color: Color get() = CategoryUtils.hexToColor(colorHex)
 
     companion object {
         // Default instances for compatibility and initial state
-        val Design = TaskCategory(1, "Design", "Brush", "#FFFFBD2E")
-        val Study = TaskCategory(2, "Study", "School", "#FF4DFFD2")
-        val Personal = TaskCategory(3, "Personal", "Favorite", "#FFB57BFF")
-        val Work = TaskCategory(4, "Work", "Business", "#FF3FC3F7")
+        val Design = TaskCategory(1, "Design", "Brush", "#FFFFBD2E", 0)
+        val Study = TaskCategory(2, "Study", "School", "#FF4DFFD2", 1)
+        val Personal = TaskCategory(3, "Personal", "Favorite", "#FFB57BFF", 2)
+        val Work = TaskCategory(4, "Work", "Business", "#FF3FC3F7", 3)
 
         fun values() = listOf(Design, Study, Personal, Work)
         

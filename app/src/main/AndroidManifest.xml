@@ -38,6 +38,7 @@
             <intent-filter>
                 <action android:name="com.algo1127.mytask.ACTION_NOTIFICATION" />
                 <action android:name="com.algo1127.mytask.ACTION_TRIGGER_REMINDER" />
+                <action android:name="com.algo1127.mytask.ACTION_TRIGGER_COUNTDOWN" />
             </intent-filter>
         </receiver>
 

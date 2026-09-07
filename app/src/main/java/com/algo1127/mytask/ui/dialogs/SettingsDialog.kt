@@ -16,13 +16,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.algo1127.mytask.BuildConfig
 import com.algo1127.mytask.ui.Theme
 
 @Composable
 fun SettingsDialog(
     onDismiss: () -> Unit,
     onOpenAiKnowledge: () -> Unit,
-    onOpenCategoryManager: () -> Unit
+    onOpenCategoryManager: () -> Unit,
+    onOpenPermissions: () -> Unit,
+    highReliabilityEnabled: Boolean,
+    onToggleHighReliability: (Boolean) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -52,10 +56,35 @@ fun SettingsDialog(
                     onClick = { onOpenCategoryManager(); onDismiss() }
                 )
                 
+                SettingsNavigationItem(
+                    label = "Setup Permissions",
+                    subtitle = "Ensure all features are active",
+                    icon = Icons.Default.Security,
+                    color = Theme.Emerald,
+                    onClick = { onOpenPermissions(); onDismiss() }
+                )
+
+                HorizontalDivider(color = Theme.White06, modifier = Modifier.padding(vertical = 8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("High Reliability", color = Theme.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("Fire reminders even in deep sleep", color = Theme.White30, fontSize = 12.sp)
+                    }
+                    Switch(
+                        checked = highReliabilityEnabled,
+                        onCheckedChange = { onToggleHighReliability(it) },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Theme.Teal, checkedTrackColor = Theme.Teal.copy(alpha = 0.5f))
+                    )
+                }
+
                 HorizontalDivider(color = Theme.White06, modifier = Modifier.padding(vertical = 8.dp))
                 
                 Text(
-                    "App Version: Build_2026-09-04A",
+                    "App Version: ${BuildConfig.VERSION_NAME}",
                     color = Theme.White10,
                     fontSize = 10.sp,
                     modifier = Modifier.align(Alignment.CenterHorizontally)

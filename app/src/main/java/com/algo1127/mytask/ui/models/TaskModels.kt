@@ -78,6 +78,7 @@ data class CountdownItem(
     val color: Int = 0xFF4DFFD2.toInt(), // Default Teal
     val linkedItemId: Long? = null,
     val linkedItemType: String? = null, // "TASK", "EVENT"
-    val createdAt: LocalDateTime = LocalDateTime.now()
+    val createdAt: LocalDateTime = LocalDateTime.now(),
+    val remindWhenUp: Boolean = false
 )
 // ✅ REMOVED: TaskCategory enum (use the one in ui/ package)

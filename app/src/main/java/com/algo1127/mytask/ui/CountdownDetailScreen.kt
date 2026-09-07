@@ -261,8 +261,8 @@ fun CountdownDetailScreen(
         EditCountdownDialog(
             item = item,
             onDismiss = { showEditDialog = false },
-            onSave = { newTitle, newColor ->
-                onEdit(item.copy(optionalTitle = newTitle, color = newColor.toArgb()))
+            onSave = { newTitle, newColor, remind ->
+                onEdit(item.copy(optionalTitle = newTitle, color = newColor.toArgb(), remindWhenUp = remind))
                 showEditDialog = false
             }
         )
@@ -293,10 +293,11 @@ private fun LinkedItemPill(info: Pair<String, TaskCategory>) {
 fun EditCountdownDialog(
     item: CountdownItem,
     onDismiss: () -> Unit,
-    onSave: (String, Color) -> Unit
+    onSave: (String, Color, Boolean) -> Unit
 ) {
     var title by remember { mutableStateOf(item.optionalTitle ?: item.title) }
     var selectedColor by remember { mutableStateOf(Color(item.color)) }
+    var remindWhenUp by remember { mutableStateOf(item.remindWhenUp) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -319,6 +320,18 @@ fun EditCountdownDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { remindWhenUp = !remindWhenUp },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = remindWhenUp,
+                        onCheckedChange = { remindWhenUp = it },
+                        colors = CheckboxDefaults.colors(checkedColor = selectedColor)
+                    )
+                    Text("Remind when time is up", color = Theme.White60, fontSize = 14.sp)
+                }
+
                 Text("Theme Color", color = Theme.White60, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     val colors = listOf(Theme.Teal, Theme.Blue, Theme.Purple, Theme.Gold, Theme.Rose, Theme.Emerald, Theme.Orange)
@@ -340,7 +353,7 @@ fun EditCountdownDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(title, selectedColor) }) {
+            TextButton(onClick = { onSave(title, selectedColor, remindWhenUp) }) {
                 Text("Save Changes", color = Theme.Orange, fontWeight = FontWeight.Bold)
             }
         },

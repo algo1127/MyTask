@@ -29,6 +29,7 @@ fun CategoryManagerScreen(
     onAdd: (String, String, String) -> Unit,
     onUpdate: (TaskCategory) -> Unit,
     onDelete: (TaskCategory) -> Unit,
+    onReorder: (List<TaskCategory>) -> Unit,
     onDismiss: () -> Unit
 ) {
     var showEditor by remember { mutableStateOf(false) }
@@ -59,9 +60,25 @@ fun CategoryManagerScreen(
                 modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                categories.forEach { category ->
+                categories.forEachIndexed { index, category ->
                     CategoryRow(
                         category = category,
+                        isFirst = index == 0,
+                        isLast = index == categories.size - 1,
+                        onMoveUp = {
+                            val mutable = categories.toMutableList()
+                            val temp = mutable[index]
+                            mutable[index] = mutable[index - 1]
+                            mutable[index - 1] = temp
+                            onReorder(mutable)
+                        },
+                        onMoveDown = {
+                            val mutable = categories.toMutableList()
+                            val temp = mutable[index]
+                            mutable[index] = mutable[index + 1]
+                            mutable[index + 1] = temp
+                            onReorder(mutable)
+                        },
                         onClick = { categoryToEdit = category; showEditor = true },
                         onDelete = { onDelete(category) }
                     )
@@ -86,6 +103,10 @@ fun CategoryManagerScreen(
 @Composable
 private fun CategoryRow(
     category: TaskCategory,
+    isFirst: Boolean,
+    isLast: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -99,6 +120,17 @@ private fun CategoryRow(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Column(verticalArrangement = Arrangement.Center) {
+                IconButton(onClick = onMoveUp, enabled = !isFirst, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.KeyboardArrowUp, null, tint = if (isFirst) Theme.White10 else Theme.White60)
+                }
+                IconButton(onClick = onMoveDown, enabled = !isLast, modifier = Modifier.size(24.dp)) {
+                    Icon(Icons.Default.KeyboardArrowDown, null, tint = if (isLast) Theme.White10 else Theme.White60)
+                }
+            }
+            
+            Spacer(modifier = Modifier.width(12.dp))
+
             Box(
                 modifier = Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(category.color.copy(alpha = 0.1f)),
                 contentAlignment = Alignment.Center

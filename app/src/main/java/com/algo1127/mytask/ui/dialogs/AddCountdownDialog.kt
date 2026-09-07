@@ -43,7 +43,8 @@ fun AddCountdownDialog(
         color: Color,
         linkedId: Long?,
         linkedType: String?,
-        optionalTitle: String?
+        optionalTitle: String?,
+        remindWhenUp: Boolean
     ) -> Unit
 ) {
     var wizardStep by remember { mutableIntStateOf(0) }
@@ -57,6 +58,7 @@ fun AddCountdownDialog(
     var linkedId by remember { mutableStateOf<Long?>(null) }
     var linkedType by remember { mutableStateOf<String?>(null) }
     var linkedName by remember { mutableStateOf<String?>(null) }
+    var remindWhenUp by remember { mutableStateOf(false) }
 
     // AI Guidance State
     var aroundHour by remember { mutableStateOf<Int?>(null) }
@@ -272,6 +274,18 @@ fun AddCountdownDialog(
                                 )
                             }
                             
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { remindWhenUp = !remindWhenUp },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = remindWhenUp,
+                                    onCheckedChange = { remindWhenUp = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = accentColor)
+                                )
+                                Text("Remind when time is up", color = Theme.White60, fontSize = 14.sp)
+                            }
+
                             Text("Theme Color", color = Theme.White60, fontSize = 13.sp)
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 val colors = listOf(Theme.Teal, Theme.Blue, Theme.Purple, Theme.Gold, Theme.Rose, Theme.Emerald, Theme.Orange)
@@ -300,7 +314,7 @@ fun AddCountdownDialog(
                 TextButton(
                     onClick = {
                         val finalTitle = if (linkedId != null) (linkedName ?: "Timer") else title
-                        onAdd(finalTitle, LocalDateTime.of(selectedDate, selectedTime), selectedColor, linkedId, linkedType, optionalTitle.ifBlank { null })
+                        onAdd(finalTitle, LocalDateTime.of(selectedDate, selectedTime), selectedColor, linkedId, linkedType, optionalTitle.ifBlank { null }, remindWhenUp)
                         onDismiss()
                     },
                     enabled = (linkedId != null) || title.isNotBlank()

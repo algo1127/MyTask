@@ -11,6 +11,16 @@ class Receiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val taskId = intent.getLongExtra("taskId", -1)
         
+        if (intent.action == "com.algo1127.mytask.ACTION_TRIGGER_COUNTDOWN") {
+            val countdownId = intent.getLongExtra("countdownId", -1)
+            val title = intent.getStringExtra("countdownTitle") ?: "Timer"
+            android.util.Log.d("Receiver", "Countdown triggered for $title ($countdownId)")
+            
+            val notifAi = (context.applicationContext as MyTaskApplication).notifAi
+            notifAi.showTimerDoneNotification(countdownId, title)
+            return
+        }
+
         if (intent.action == "com.algo1127.mytask.ACTION_TRIGGER_REMINDER") {
             android.util.Log.d("Receiver", "Reminder triggered for task $taskId")
             val notifAi = (context.applicationContext as MyTaskApplication).notifAi

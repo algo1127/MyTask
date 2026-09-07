@@ -97,6 +97,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.getAiKnowledge(cats) 
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val aiPreferences: StateFlow<Map<String, String>> = getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.aiPreferences
+
+    fun getAiPreference(key: String): String? {
+        return getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.getAiPreference(key)
+    }
+
+    fun setAiPreference(key: String, value: String) {
+        getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.setAiPreference(key, value)
+        refresh()
+    }
+
     private fun seedDefaultCategories() {
         viewModelScope.launch {
             TaskCategory.values().forEach {
@@ -109,30 +120,42 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         id = id,
         label = label,
         iconName = iconName,
-        colorHex = colorHex
+        colorHex = colorHex,
+        position = position
     )
 
     private fun TaskCategory.toEntity() = com.algo1127.mytask.data.Category(
+        id = id,
         label = label,
         iconName = iconName,
-        colorHex = colorHex
+        colorHex = colorHex,
+        position = position
     )
 
     fun addCategory(label: String, iconName: String, colorHex: String) {
         viewModelScope.launch {
-            categoryDao.insert(com.algo1127.mytask.data.Category(label = label, iconName = iconName, colorHex = colorHex))
+            val currentMax = categories.value.maxOfOrNull { it.position } ?: 0
+            categoryDao.insert(com.algo1127.mytask.data.Category(label = label, iconName = iconName, colorHex = colorHex, position = currentMax + 1))
         }
     }
 
     fun updateCategory(category: TaskCategory) {
         viewModelScope.launch {
-            categoryDao.update(com.algo1127.mytask.data.Category(id = category.id, label = category.label, iconName = category.iconName, colorHex = category.colorHex))
+            categoryDao.update(category.toEntity())
         }
     }
 
     fun deleteCategory(category: TaskCategory) {
         viewModelScope.launch {
-            categoryDao.delete(com.algo1127.mytask.data.Category(id = category.id, label = category.label, iconName = category.iconName, colorHex = category.colorHex))
+            categoryDao.delete(category.toEntity())
+        }
+    }
+
+    fun reorderCategories(newList: List<TaskCategory>) {
+        viewModelScope.launch {
+            newList.forEachIndexed { index, category ->
+                categoryDao.update(category.toEntity().copy(position = index))
+            }
         }
     }
 
@@ -213,7 +236,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         color: Int,
         linkedId: Long? = null,
         linkedType: String? = null,
-        optionalTitle: String? = null
+        optionalTitle: String? = null,
+        remindWhenUp: Boolean = false
     ) {
         viewModelScope.launch {
             val item = com.algo1127.mytask.ui.models.CountdownItem(
@@ -222,21 +246,31 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 color = color,
                 linkedItemId = linkedId,
                 linkedItemType = linkedType,
-                optionalTitle = optionalTitle
+                optionalTitle = optionalTitle,
+                remindWhenUp = remindWhenUp
             )
             countdownDao.insertCountdown(item)
+            if (remindWhenUp) {
+                getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.scheduleCountdown(item)
+            }
         }
     }
 
     fun deleteCountdown(item: com.algo1127.mytask.ui.models.CountdownItem) {
         viewModelScope.launch {
             countdownDao.deleteCountdown(item)
+            getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.cancelCountdown(item.id)
         }
     }
 
     fun updateCountdown(item: com.algo1127.mytask.ui.models.CountdownItem) {
         viewModelScope.launch {
             countdownDao.updateCountdown(item)
+            if (item.remindWhenUp) {
+                getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.scheduleCountdown(item)
+            } else {
+                getApplication<com.algo1127.mytask.MyTaskApplication>().notifAi.cancelCountdown(item.id)
+            }
         }
     }
 

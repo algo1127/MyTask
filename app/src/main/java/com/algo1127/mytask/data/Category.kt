@@ -8,12 +8,13 @@ data class Category(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val label: String,
     val iconName: String,
-    val colorHex: String
+    val colorHex: String,
+    val position: Int = 0
 )
 
 @Dao
 interface CategoryDao {
-    @Query("SELECT * FROM categories")
+    @Query("SELECT * FROM categories ORDER BY position ASC")
     fun getAllCategories(): Flow<List<Category>>
 
     @Query("SELECT * FROM categories WHERE id = :id")

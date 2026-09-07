@@ -14,6 +14,9 @@ import com.algo1127.mytask.ui.TaskCategory
 import com.algo1127.mytask.ui.models.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -32,14 +35,15 @@ class NotifAi(private val context: Context) {
     // AI state
     private var trustScore     = 0.5f
     private var mood           = Mood.HAPPY
-    private var aiPreferences  = mutableMapOf<String, String>()
+    private val _aiPreferences = MutableStateFlow<Map<String, String>>(emptyMap())
+    val aiPreferences: StateFlow<Map<String, String>> = _aiPreferences.asStateFlow()
 
     init {
         scope.launch {
             persistence.migrateIfNecessary()
             val state  = persistence.getAiState()
             trustScore = state.first
-            aiPreferences = state.second.toMutableMap()
+            _aiPreferences.value = state.second
             learningEngine.recordAppOpened()
             // Start background usage collection
             UsageAccessCollector.schedule(context)
@@ -108,6 +112,17 @@ class NotifAi(private val context: Context) {
         )
     }
 
+    fun setAiPreference(key: String, value: String) {
+        val newPrefs = _aiPreferences.value.toMutableMap()
+        newPrefs[key] = value
+        _aiPreferences.value = newPrefs
+        scope.launch {
+            persistence.saveAiState(trustScore, newPrefs)
+        }
+    }
+
+    fun getAiPreference(key: String): String? = _aiPreferences.value[key]
+
     // ── Notification sending ──────────────────────────────────────────
 
     fun sendTaskNotification(task: Task, intensity: Float) {
@@ -121,7 +136,7 @@ class NotifAi(private val context: Context) {
 
                 val slotQuality = learningEngine.currentSlotScore(task.category)
 
-                val text = if (aiPreferences["soulless"] == "true") {
+                val text = if (_aiPreferences.value["soulless"] == "true") {
                     "Reminder: ${task.title}"
                 } else {
                     phrases.pickPhrase(
@@ -261,7 +276,9 @@ class NotifAi(private val context: Context) {
                     }
                     NotificationAction.FORGOT -> {
                         val forgetCount = getForgetCount(taskId) + 1
-                        aiPreferences["forget_${taskId}"] = forgetCount.toString()
+                        val newPrefs = _aiPreferences.value.toMutableMap()
+                        newPrefs["forget_${taskId}"] = forgetCount.toString()
+                        _aiPreferences.value = newPrefs
                         trustScore = (trustScore - 0.03f).coerceAtLeast(0.0f)
                         learningEngine.recordForget(taskId, task.category)
                         rewardSystem.onForgotten()
@@ -277,7 +294,7 @@ class NotifAi(private val context: Context) {
                     }
                 }
 
-                persistence.saveAiState(trustScore, aiPreferences)
+                persistence.saveAiState(trustScore, _aiPreferences.value)
 
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Action handler failed: ${e.message}", e)
@@ -333,10 +350,44 @@ class NotifAi(private val context: Context) {
         }
     }
 
+    fun scheduleCountdown(item: CountdownItem) {
+        reminderScheduler.scheduleCountdown(item)
+    }
+
+    fun cancelCountdown(id: Long) {
+        reminderScheduler.cancelCountdown(id)
+    }
+
+    fun showTimerDoneNotification(id: Long, title: String) {
+        scope.launch {
+            try {
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val channelId = "mytask_timers"
+                
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    val channel = NotificationChannel(channelId, "MyTask Timers", NotificationManager.IMPORTANCE_HIGH)
+                    manager.createNotificationChannel(channel)
+                }
+
+                val builder = NotificationCompat.Builder(context, channelId)
+                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                    .setContentTitle("Time is up!")
+                    .setContentText("Your timer '$title' has finished.")
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setAutoCancel(true)
+
+                manager.notify(id.toInt() + 100_000, builder.build())
+            } catch (e: Exception) {
+                android.util.Log.e("NotifAi", "Timer notification failed: ${e.message}")
+            }
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────
 
     private fun getForgetCount(taskId: Long): Int =
-        aiPreferences["forget_$taskId"]?.toIntOrNull() ?: 0
+        _aiPreferences.value["forget_$taskId"]?.toIntOrNull() ?: 0
 
     private fun logNotificationSent(taskId: Long, intensity: Float) {
         android.util.Log.d("NotifAi",
