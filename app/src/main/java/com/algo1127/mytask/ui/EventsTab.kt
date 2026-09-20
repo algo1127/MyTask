@@ -66,7 +66,8 @@ fun EventsTab(
     selectedDate: LocalDate,
     completedIds: Set<Long>,
     onToggleCompletion: (Long, Boolean) -> Unit,
-    onEventClick: (EventItem) -> Unit
+    onEventClick: (EventItem) -> Unit,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val sorted = remember(events, selectedDate) {
         events
@@ -91,7 +92,7 @@ fun EventsTab(
         modifier = Modifier
             .fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(0.dp),
-        contentPadding = PaddingValues(bottom = 100.dp)
+        contentPadding = PaddingValues(bottom = 100.dp + bottomPadding)
     ) {
         if (sorted.isEmpty()) {
             item {

@@ -10,7 +10,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -28,69 +27,142 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.algo1127.mytask.NotifAi.NotifAi
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun RemindersTab(
-    tasks: List<TaskItem>,
+    calendarTasks: List<TaskItem>,
+    persistentTasks: List<com.algo1127.mytask.ui.models.Task>,
+    events: List<EventItem>,
     selectedDate: LocalDate,
-    notifAi: NotifAi,
     completedIds: Set<Long>,
-    onToggleCompletion: (Long, Boolean) -> Unit,
-    onTaskClick: (TaskItem) -> Unit = {},
-    onEditRequest: (TaskItem) -> Unit = {}
+    onCompleteLegacyReminder: (Long, Boolean) -> Unit,
+    onDismissTaskReminder: (com.algo1127.mytask.ui.models.Task) -> Unit,
+    onDismissEventReminder: (EventItem) -> Unit,
+    onCalendarTaskClick: (TaskItem) -> Unit,
+    onPersistentTaskClick: (com.algo1127.mytask.ui.models.Task) -> Unit,
+    onEventClick: (EventItem) -> Unit,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
-    val visibleTasks = remember(tasks, selectedDate) {
-        tasks.filter { it.date == selectedDate && it.isReminder }
+    val allReminders = remember(calendarTasks, persistentTasks, events, selectedDate) {
+        val list = mutableListOf<ReminderViewItem>()
+        
+        // 1. Calendar Tasks (Legacy Reminders) - Trust the ViewModel's list
+        calendarTasks.filter { it.isReminder }.forEach {
+            list.add(ReminderViewItem.CalendarTask(it))
+        }
+        
+        // 2. Persistent Tasks with alerts - Alerts are separate from the task itself
+        persistentTasks.filter { it.reminderDateTime?.toLocalDate() == selectedDate }.forEach {
+            list.add(ReminderViewItem.PersistentTask(it))
+        }
+        
+        // 3. Events with alerts
+        events.filter { it.reminderDateTime?.toLocalDate() == selectedDate }.forEach {
+            list.add(ReminderViewItem.Event(it))
+        }
+        
+        list.sortedBy { it.sortTime }
     }
 
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 100.dp)
+        contentPadding = PaddingValues(bottom = 100.dp + bottomPadding, top = 12.dp)
     ) {
-        if (visibleTasks.isEmpty()) {
+        if (allReminders.isEmpty()) {
             item {
                 EmptyState(
                     icon = Icons.Outlined.CheckCircle,
                     title = "All clear",
-                    subtitle = "Tap + to add a reminder",
+                    subtitle = "No alerts for this day",
                     color = Theme.Teal
                 )
             }
         } else {
-            items(visibleTasks, key = { it.id }) { item ->
-                val isCompleted = completedIds.contains(item.id)
-                
+            items(allReminders, key = { it.uniqueId }) { item ->
                 ReminderRow(
                     item = item,
-                    isCompleted = isCompleted,
-                    onToggle = {
-                        onToggleCompletion(item.id, !isCompleted)
+                    isCompleted = when(item) {
+                        is ReminderViewItem.CalendarTask -> completedIds.contains(item.task.id) || item.task.done
+                        is ReminderViewItem.PersistentTask -> false // Task reminders are alerts, not tasks
+                        is ReminderViewItem.Event -> false
                     },
-                    onClick = { onToggleCompletion(item.id, !isCompleted) },
-                    onLongClick = { onEditRequest(item) },
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = tween(300),
-                        placementSpec = spring(stiffness = Spring.StiffnessLow)
-                    )
+                    onToggle = {
+                        when(item) {
+                            is ReminderViewItem.CalendarTask -> onCompleteLegacyReminder(item.task.id, !(completedIds.contains(item.task.id) || item.task.done))
+                            is ReminderViewItem.PersistentTask -> onDismissTaskReminder(item.task)
+                            is ReminderViewItem.Event -> onDismissEventReminder(item.event)
+                        }
+                    },
+                    onClick = {
+                        when(item) {
+                            is ReminderViewItem.CalendarTask -> onCalendarTaskClick(item.task)
+                            is ReminderViewItem.PersistentTask -> onPersistentTaskClick(item.task)
+                            is ReminderViewItem.Event -> onEventClick(item.event)
+                        }
+                    },
+                    modifier = Modifier.animateItem()
                 )
             }
         }
     }
 }
 
+private sealed class ReminderViewItem {
+    abstract val uniqueId: String
+    abstract val title: String
+    abstract val timeLabel: String
+    abstract val sortTime: String
+    abstract val category: TaskCategory
+    abstract val typeLabel: String
+    abstract val typeColor: Color
+    abstract val actionIcon: androidx.compose.ui.graphics.vector.ImageVector
+
+    data class CalendarTask(val task: TaskItem) : ReminderViewItem() {
+        override val uniqueId = "cal_${task.id}"
+        override val title = task.title
+        override val timeLabel = task.time
+        override val sortTime = task.time
+        override val category = task.category
+        override val typeLabel = "Reminder"
+        override val typeColor = Theme.Teal
+        override val actionIcon = Icons.Default.CheckCircle
+    }
+
+    data class PersistentTask(val task: com.algo1127.mytask.ui.models.Task) : ReminderViewItem() {
+        override val uniqueId = "pers_${task.id}"
+        override val title = task.title
+        override val timeLabel = task.reminderDateTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: ""
+        override val sortTime = timeLabel
+        override val category = task.category
+        override val typeLabel = "Task Alert"
+        override val typeColor = Theme.Purple
+        override val actionIcon = Icons.Default.NotificationsOff
+    }
+
+    data class Event(val event: EventItem) : ReminderViewItem() {
+        override val uniqueId = "evt_${event.id}"
+        override val title = event.title
+        override val timeLabel = event.reminderDateTime?.format(DateTimeFormatter.ofPattern("HH:mm")) ?: ""
+        override val sortTime = timeLabel
+        override val category = TaskCategory.Personal
+        override val typeLabel = "Event Alert"
+        override val typeColor = Theme.Blue
+        override val actionIcon = Icons.Default.NotificationsOff
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ReminderRow(
-    item: TaskItem,
+    item: ReminderViewItem,
     isCompleted: Boolean,
     onToggle: () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onLongClick: () -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     var isTapped by remember { mutableStateOf(false) }
     LaunchedEffect(isTapped) { if (isTapped) { delay(150); isTapped = false } }
@@ -101,7 +173,7 @@ private fun ReminderRow(
         label = "reminderScale"
     )
     
-    val decoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+    val accentColor = item.typeColor
 
     Surface(
         modifier = modifier
@@ -110,8 +182,7 @@ private fun ReminderRow(
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { isTapped = true; onClick() },
-                onLongClick = onLongClick
+                onClick = { isTapped = true; onClick() }
             ),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent
@@ -121,7 +192,7 @@ private fun ReminderRow(
                 .fillMaxWidth()
                 .background(
                     if (isCompleted)
-                        Brush.linearGradient(colors = listOf(Theme.Teal.copy(alpha = 0.12f), Theme.TealDim.copy(alpha = 0.08f)))
+                        Brush.linearGradient(colors = listOf(accentColor.copy(alpha = 0.12f), accentColor.copy(alpha = 0.08f)))
                     else
                         Brush.linearGradient(colors = listOf(Theme.CardBg, Theme.CardBg))
                 )
@@ -130,7 +201,7 @@ private fun ReminderRow(
                 modifier = Modifier
                     .width(3.dp).fillMaxHeight()
                     .clip(RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp))
-                    .background(if (isCompleted) Theme.Teal else item.category.color.copy(alpha = 0.8f))
+                    .background(if (isCompleted) accentColor else item.category.color.copy(alpha = 0.8f))
                     .align(Alignment.CenterStart)
             )
             Row(
@@ -140,14 +211,14 @@ private fun ReminderRow(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp))
-                        .background(if (isCompleted) Theme.Teal.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
+                        .background(if (isCompleted) accentColor.copy(alpha = 0.2f) else item.category.color.copy(alpha = 0.12f))
                         .clickable { onToggle() }
                 ) {
                     AnimatedContent(isCompleted, label = "iconAnim") { completed ->
                         Icon(
-                            imageVector = if (completed) Icons.Default.CheckCircle else item.category.icon,
+                            imageVector = if (completed) Icons.Default.CheckCircle else item.actionIcon,
                             contentDescription = null,
-                            tint = if (completed) Theme.Teal else item.category.color,
+                            tint = if (completed) accentColor else item.category.color,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -157,26 +228,24 @@ private fun ReminderRow(
                     Text(
                         text = item.title, color = if (isCompleted) Theme.White30 else Theme.White,
                         fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        textDecoration = decoration,
+                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                         maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(5.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(item.category.color.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
-                            Text(item.category.label, color = item.category.color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Box(modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(accentColor.copy(alpha = 0.15f)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+                            Text(item.typeLabel, color = accentColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         Icon(Icons.Default.Schedule, null, tint = Theme.White30, modifier = Modifier.size(12.dp))
-                        Text(item.time, color = Theme.White60, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(item.timeLabel, color = Theme.White60, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
                 
-                AnimatedVisibility(
-                    visible = isCompleted,
-                    enter = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(),
-                    exit = scaleOut() + fadeOut()
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(28.dp).clip(CircleShape).background(Theme.Teal)) {
-                        Icon(Icons.Default.Check, null, tint = Theme.BgDeep, modifier = Modifier.size(16.dp))
+                if (isCompleted) {
+                    Icon(Icons.Default.Check, null, tint = accentColor, modifier = Modifier.size(20.dp))
+                } else if (item !is ReminderViewItem.CalendarTask) {
+                    IconButton(onClick = onToggle) {
+                        Icon(Icons.Default.Close, "Dismiss", tint = Theme.White30, modifier = Modifier.size(18.dp))
                     }
                 }
             }

@@ -12,7 +12,7 @@ import com.algo1127.mytask.ui.models.Task
 
 @Database(
     entities = [CompletionRecord::class, Task::class, ReminderItem::class, EventItem::class, CountdownItem::class, Category::class],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

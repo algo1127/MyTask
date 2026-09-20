@@ -1,0 +1,6 @@
+- [x] Fix Task/Reminder notes saving (pass description to constructor)
+- [x] Fix Custom Category persistence (serialize icon and color to calendar)
+- [x] Update CalendarReader to clean up new robust category markers
+- [x] Fix AI tracking to store full category JSON
+- [x] Finalize Countdown range slider (0-24 selection)
+- [x] Verify UI consistency and data flow

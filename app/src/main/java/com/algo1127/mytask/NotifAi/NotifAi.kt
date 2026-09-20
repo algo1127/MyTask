@@ -38,6 +38,8 @@ class NotifAi(private val context: Context) {
     private val _aiPreferences = MutableStateFlow<Map<String, String>>(emptyMap())
     val aiPreferences: StateFlow<Map<String, String>> = _aiPreferences.asStateFlow()
 
+    private val cooldownPrefs = context.getSharedPreferences("notif_cooldowns", Context.MODE_PRIVATE)
+
     init {
         scope.launch {
             persistence.migrateIfNecessary()
@@ -125,31 +127,38 @@ class NotifAi(private val context: Context) {
 
     // ── Notification sending ──────────────────────────────────────────
 
-    fun sendTaskNotification(task: Task, intensity: Float) {
+    fun sendTaskNotification(task: Task, intensity: Float, minutesBefore: Int = 0) {
         scope.launch {
             try {
-                // Don't notify if the AI says this is a bad slot AND intensity isn't critical
-                if (!learningEngine.shouldNotifyNow(task.category) && intensity < 0.85f) {
-                    android.util.Log.d("NotifAi", "Skipping notification — bad slot / fatigue detected")
+                val highReliability = _aiPreferences.value["high_reliability"] == "true"
+                // REMINDERS: Always notify if it's an explicit reminder, Fixed time, has explicit reminder time, or High Reliability is ON
+                val isExplicit = task.isReminder || task.timePreference is TimePreference.Fixed || task.reminderDateTime != null || highReliability
+                
+                // USER REQUEST: Stop the annoying AI-driven task notifications for now.
+                // We only allow explicit reminders to fire.
+                if (!isExplicit) {
+                    android.util.Log.d("NotifAi", "Skipping AI-driven notification for task ${task.id} — strictly following user request to stop 'nagging'.")
                     return@launch
                 }
 
                 val slotQuality = learningEngine.currentSlotScore(task.category)
 
                 val text = if (_aiPreferences.value["soulless"] == "true") {
-                    "Reminder: ${task.title}"
+                    if (minutesBefore > 0) "Reminder in $minutesBefore mins: ${task.title}" else "Reminder: ${task.title}"
                 } else {
-                    phrases.pickPhrase(
+                    val basePhrase = phrases.pickPhrase(
                         task,
                         intensity,
                         mood,
                         forgetCount = getForgetCount(task.id)
                     )
+                    if (minutesBefore > 0) "Coming up in $minutesBefore mins: $basePhrase" else basePhrase
                 }
 
                 // Priority is influenced by both intensity AND slot quality
+                // Explicit reminders or High Reliability ALWAYS get HIGH/MAX priority
                 val effectivePriority = when {
-                    intensity >= 0.85f || slotQuality >= 0.75 ->
+                    isExplicit || intensity >= 0.85f || slotQuality >= 0.75 ->
                         NotificationCompat.PRIORITY_HIGH
                     else ->
                         NotificationCompat.PRIORITY_DEFAULT
@@ -182,6 +191,9 @@ class NotifAi(private val context: Context) {
                 }
 
                 manager.notify(task.id.toInt(), builder.build())
+
+                // Record cooldown (persisted)
+                cooldownPrefs.edit().putLong("task_${task.id}", System.currentTimeMillis()).apply()
 
                 // Record that we sent this — used for response time calculation
                 learningEngine.recordNotificationSent(task.id, task.category)
@@ -239,16 +251,29 @@ class NotifAi(private val context: Context) {
 
     // ── Task evaluation ───────────────────────────────────────────────
 
-    fun evaluateTask(task: Task) {
+    fun evaluateTask(task: Task, isFromWorker: Boolean = true, minutesBefore: Int = 0) {
         scope.launch {
             try {
                 val now       = LocalDateTime.now()
                 val intensity = calculateIntensity(task, now)
+                val highReliability = _aiPreferences.value["high_reliability"] == "true"
 
-                if (intensity >= 0.5 ||
-                    (task.dueDate == now.toLocalDate() && task.progress < 1.0f)
-                ) {
-                    sendTaskNotification(task, intensity)
+                if (isFromWorker) {
+                    // This is the 15-min background nudge.
+                    // Strictly skip if the task has an explicit scheduled or fixed timing,
+                    // since AlarmManager handles those exactly at the correct time!
+                    val hasExplicitTiming = task.isReminder || task.timePreference is TimePreference.Fixed || task.reminderDateTime != null
+                    if (hasExplicitTiming && !highReliability) {
+                        return@launch
+                    }
+                    
+                    // For flexible tasks, only notify if intensity is genuinely high to avoid annoying nagging
+                    if (intensity >= 0.75f) {
+                        sendTaskNotification(task, intensity, 0)
+                    }
+                } else {
+                    // This is an explicit AlarmManager trigger (60, 30, 15, 0 mins before). ALWAYS send it.
+                    sendTaskNotification(task, intensity, minutesBefore)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Evaluation failed: ${e.message}", e)
@@ -338,7 +363,8 @@ class NotifAi(private val context: Context) {
                     dueDate        = item.date,
                     category       = item.category,
                     progress       = if (item.done) 1.0f else 0.0f,
-                    timePreference = TimePreference.Fixed(LocalTime.parse(item.time))
+                    timePreference = TimePreference.Fixed(LocalTime.parse(item.time)),
+                    isReminder     = item.isReminder
                 )
                 persistence.saveTask(task)
                 learningEngine.recordTaskCreated(task.id, task.category)
@@ -346,6 +372,95 @@ class NotifAi(private val context: Context) {
                 android.util.Log.d("NotifAi", "Task created (compat): ${item.title}")
             } catch (e: Exception) {
                 android.util.Log.e("NotifAi", "Compat onTaskCreated failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun onTaskUpdated(item: com.algo1127.mytask.ui.TaskItem) {
+        scope.launch {
+            try {
+                val task = Task(
+                    id             = item.id,
+                    title          = item.title,
+                    startDate      = item.date,
+                    dueDate        = item.date,
+                    category       = item.category,
+                    progress       = if (item.done) 1.0f else 0.0f,
+                    timePreference = TimePreference.Fixed(LocalTime.parse(item.time)),
+                    isReminder     = item.isReminder
+                )
+                persistence.saveTask(task)
+                reminderScheduler.cancel(task.id)
+                reminderScheduler.schedule(task)
+                android.util.Log.d("NotifAi", "Task updated (compat): ${item.title}")
+            } catch (e: Exception) {
+                android.util.Log.e("NotifAi", "Compat onTaskUpdated failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun onTaskDeleted(taskId: Long) {
+        scope.launch {
+            try {
+                persistence.deleteTask(taskId)
+                reminderScheduler.cancel(taskId)
+                android.util.Log.d("NotifAi", "Task deleted (compat): $taskId")
+            } catch (e: Exception) {
+                android.util.Log.e("NotifAi", "Compat onTaskDeleted failed: ${e.message}", e)
+            }
+        }
+    }
+
+    fun onEventCreated(item: com.algo1127.mytask.ui.EventItem) {
+        // AI currently doesn't track specific EventItem details in Room except for countdowns/reminders
+        // But we can record it in UsageTracker
+        scope.launch {
+            learningEngine.recordTaskCreated(item.id, TaskCategory.Personal)
+        }
+    }
+
+    fun onEventDeleted(eventId: Long) {
+        scope.launch {
+            reminderScheduler.cancelEventReminder(eventId)
+        }
+    }
+
+    fun onEventUpdated(item: com.algo1127.mytask.ui.EventItem) {
+        // AI Tracking and exact ReminderScheduler trigger scheduling!
+        scope.launch {
+            // First clear any previous alarm offsets
+            reminderScheduler.cancelEventReminder(item.id)
+            
+            // Map the event item to include its real reminderDateTime attribute!
+            val entity = com.algo1127.mytask.ui.models.EventItem(
+                id = item.id,
+                title = item.title,
+                startTime = item.startTime,
+                endTime = item.endTime,
+                location = item.location,
+                date = item.date,
+                notes = item.notes,
+                reminderDateTime = item.reminderDateTime
+            )
+            reminderScheduler.scheduleEventReminder(entity)
+        }
+    }
+
+    fun sendEventNotification(event: com.algo1127.mytask.ui.models.EventItem, minutesBefore: Int = 0) {
+        scope.launch {
+            try {
+                val text = if (minutesBefore > 0) "Coming up in $minutesBefore mins: ${event.title}" else "Starting now: ${event.title}"
+                val channelId = "mytask_channel"
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val builder = NotificationCompat.Builder(context, channelId)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("Event Reminder")
+                    .setContentText(text)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setAutoCancel(true)
+                manager.notify((event.id + 500000).toInt(), builder.build())
+            } catch (e: Exception) {
+                android.util.Log.e("NotifAi", "Event notification failed", e)
             }
         }
     }

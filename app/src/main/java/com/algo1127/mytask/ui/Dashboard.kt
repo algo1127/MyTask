@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -147,30 +148,6 @@ private fun ShimmerBlock(modifier: Modifier = Modifier, height: Float = 80f) {
     )
 }
 
-// ==================== EMPTY STATE ====================
-
-@Composable
-private fun EmptyState(message: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 48.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(64.dp)
-                .clip(CircleShape)
-                .background(Theme.White06)
-        ) {
-            Icon(icon, null, tint = Theme.White30, modifier = Modifier.size(28.dp))
-        }
-        Text(message, color = Theme.White30, fontSize = 14.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-    }
-}
-
 // ==================== MAIN SCREEN ====================
 
 @OptIn(ExperimentalMaterialApi::class, ExperimentalMaterial3Api::class)
@@ -196,19 +173,24 @@ fun DashboardScreen(
     val calendarData by viewModel.calendarData.collectAsState()
     val isLoading = uiState.isLoading
     val calendarTasks = uiState.tasks
+    val persistentTasks = uiState.persistentTasks
     val calendarEvents = uiState.events
     val taskCounts = calendarData.first
     val eventCounts = calendarData.second
     val taskAgendas = calendarData.third
+    val badgeCounts = uiState.badgeCounts
 
     val completedIds by viewModel.completedIds.collectAsState()
     val unscheduledTasks by viewModel.unscheduledTasks.collectAsState()
     val activeCountdowns by viewModel.activeCountdowns.collectAsState()
+    val aiPreferences by viewModel.aiPreferences.collectAsState()
 
     var isShowingCountdowns by remember { mutableStateOf(false) }
     var selectedCountdown by remember { mutableStateOf<com.algo1127.mytask.ui.models.CountdownItem?>(null) }
     var selectedEvent by remember { mutableStateOf<EventItem?>(null) }
     var selectedTask by remember { mutableStateOf<TaskItem?>(null) }
+    var selectedPersistentTask by remember { mutableStateOf<com.algo1127.mytask.ui.models.Task?>(null) }
+    var selectedSubtask by remember { mutableStateOf<Pair<com.algo1127.mytask.ui.models.Task, com.algo1127.mytask.ui.models.Subtask>?>(null) }
 
     val pullRefreshState = rememberPullRefreshState(
         refreshing = isLoading,
@@ -216,7 +198,10 @@ fun DashboardScreen(
     )
 
     var showAddTaskDialog by remember { mutableStateOf(false) }
-    var taskToEdit by remember { mutableStateOf<TaskItem?>(null) }
+    var taskToEditRoom by remember { mutableStateOf<com.algo1127.mytask.ui.models.Task?>(null) }
+    var taskItemToEdit by remember { mutableStateOf<TaskItem?>(null) }
+    var subtaskToEdit by remember { mutableStateOf<com.algo1127.mytask.ui.models.Subtask?>(null) }
+    var subtaskParentTaskToEdit by remember { mutableStateOf<com.algo1127.mytask.ui.models.Task?>(null) }
     var addTaskSource by remember { mutableIntStateOf(1) }
     var showAddEventDialog by remember { mutableStateOf(false) }
     var showAddCountdownDialog by remember { mutableStateOf(false) }
@@ -247,8 +232,10 @@ fun DashboardScreen(
     val pagerState = rememberPagerState(initialPage = 1, pageCount = { 4 })
     val notifAi = (LocalContext.current.applicationContext as MyTaskApplication).notifAi
 
-    val completedCount = completedIds.size
-    val progress = if (calendarTasks.isNotEmpty()) completedCount.toFloat() / calendarTasks.size else 0f
+    // Calculate total active items and completions for both system layers on this day
+    val totalCount = calendarTasks.size + persistentTasks.count { it.focusState != com.algo1127.mytask.ui.models.FocusState.Archived }
+    val completedCount = completedIds.size + persistentTasks.count { it.progress >= 1.0f && it.focusState != com.algo1127.mytask.ui.models.FocusState.Archived }
+    val progress = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
     val fabVisible = !showAddTaskDialog && !showAddEventDialog
 
     var visible by remember { mutableStateOf(false) }
@@ -298,10 +285,39 @@ fun DashboardScreen(
                     MiniCalendar(visible = visible, today = today, selectedEpochDay = selectedDate.toEpochDay(), onDaySelected = { day -> haptic(); viewModel.setSelectedDate(LocalDate.ofEpochDay(day)) }, calendarIsGrid = calendarIsGrid, onToggleGrid = { calendarIsGrid = !calendarIsGrid; if (!calendarIsGrid) gridMonthOffset = 0L }, gridMonthOffset = gridMonthOffset, onGridMonthChange = { gridMonthOffset += it }, onResetMonth = { gridMonthOffset = 0L }, calendarRowState = calendarRowState, taskCounts = taskCounts, eventCounts = eventCounts, taskAgendas = taskAgendas, infiniteOffset = infiniteOffset, coroutineScope = coroutineScope, delayMillis = 200, onJumpToDateRequest = { showJumpToDateDialog = true })
                 }
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
+                    TabBar(pagerState = pagerState, badgeCounts = badgeCounts, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
                     Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f), beyondViewportPageCount = 1) { page ->
-                        PageContent(page = page, isLoading = isLoading, calendarTasks = calendarTasks, calendarEvents = calendarEvents, selectedDate = selectedDate, notifAi = notifAi, completedIds = completedIds, countdowns = activeCountdowns, onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) }, onTaskUpdate = { viewModel.updateTask(it) }, onCountdownClick = { selectedCountdown = it }, onEventClick = { selectedEvent = it }, onTaskClick = { selectedTask = it }, horizontalPadding = hPad)
+                    HorizontalPager(
+                        state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f), beyondViewportPageCount = 1
+                    ) { page ->
+                        PageContent(
+                            page = page, 
+                            isLoading = isLoading, 
+                            calendarTasks = calendarTasks, 
+                            persistentTasks = persistentTasks,
+                            calendarEvents = calendarEvents, 
+                            selectedDate = selectedDate, 
+                            notifAi = notifAi, 
+                            completedIds = completedIds, 
+                            countdowns = activeCountdowns, 
+                            aiPreferences = aiPreferences,
+                            onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) }, 
+                            onTogglePersistentCompletion = { id, done -> haptic(); viewModel.togglePersistentTaskCompletion(id, done) },
+                            onTaskUpdate = { viewModel.updateTaskItem(it) }, 
+                            onPersistentTaskUpdate = { viewModel.updatePersistentTask(it) },
+                            onPersistentTaskDelete = { viewModel.deletePersistentTask(it) },
+                            onCalendarTaskDelete = { viewModel.deleteTask(it) },
+                            onDismissTaskReminder = { viewModel.removeReminderFromTask(it) },
+                            onDismissEventReminder = { viewModel.removeReminderFromEvent(it) },
+                            onCountdownClick = { selectedCountdown = it }, 
+                            onEventClick = { selectedEvent = it }, 
+                            onTaskClick = { selectedTask = it }, 
+                            onPersistentTaskClick = { selectedPersistentTask = it },
+                            onEditPersistentRequest = { taskToEditRoom = it; addTaskSource = 1; showAddTaskDialog = true },
+                            onEditItemRequest = { taskItemToEdit = it; addTaskSource = 0; showAddTaskDialog = true },
+                            horizontalPadding = 0.dp, 
+                            bottomPadding = bottomInset
+                        )
                     }
                 }
             }
@@ -317,12 +333,55 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
                 Box(modifier = Modifier.fillMaxWidth().offset { val y = (headerOffsetHeightPx + headerHeightPx).coerceAtLeast(0f); IntOffset(0, y.toInt()) }.onGloballyPositioned { tabBarHeightPx = it.size.height.toFloat() }.background(Theme.BgMid).padding(horizontal = hPad, vertical = 8.dp)) {
-                    TabBar(pagerState = pagerState, calendarTasks = calendarTasks, calendarEvents = calendarEvents, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
+                    TabBar(pagerState = pagerState, badgeCounts = badgeCounts, coroutineScope = coroutineScope, visible = visible, delayMillis = 300)
                 }
                 HorizontalPager(
-                    state = pagerState, modifier = Modifier.fillMaxSize().offset { val currentPos = (headerHeightPx + tabBarHeightPx + headerOffsetHeightPx).coerceAtLeast(tabBarHeightPx); IntOffset(0, currentPos.toInt()) }, pageSpacing = 16.dp, userScrollEnabled = true, beyondViewportPageCount = 1
+                    state = pagerState, 
+                    modifier = Modifier.fillMaxSize().offset { val currentPos = (headerHeightPx + tabBarHeightPx + headerOffsetHeightPx).coerceAtLeast(tabBarHeightPx); IntOffset(0, currentPos.toInt()) }, 
+                    pageSpacing = 16.dp, 
+                    userScrollEnabled = true, 
+                    beyondViewportPageCount = 1
                 ) { page ->
-                    PageContent(page = page, isLoading = isLoading, calendarTasks = calendarTasks, calendarEvents = calendarEvents, selectedDate = selectedDate, notifAi = notifAi, completedIds = completedIds, countdowns = activeCountdowns, onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) }, onTaskUpdate = { viewModel.updateTask(it) }, onCountdownClick = { selectedCountdown = it }, onEventClick = { selectedEvent = it }, onTaskClick = { selectedTask = it }, onEditRequest = { task -> taskToEdit = task; addTaskSource = if (task.isReminder) 0 else 1; showAddTaskDialog = true }, horizontalPadding = hPad)
+                        PageContent(
+                            page = page, 
+                            isLoading = isLoading, 
+                            calendarTasks = calendarTasks, 
+                            persistentTasks = persistentTasks,
+                            calendarEvents = calendarEvents, 
+                            selectedDate = selectedDate, 
+                            notifAi = notifAi, 
+                            completedIds = completedIds, 
+                            countdowns = activeCountdowns, 
+                            aiPreferences = aiPreferences,
+                            onToggleCompletion = { id, done -> haptic(); viewModel.toggleCompletion(id, done) }, 
+                            onTogglePersistentCompletion = { id, done -> haptic(); viewModel.togglePersistentTaskCompletion(id, done) },
+                            onToggleSubtaskCompletion = { id, subId, done -> haptic(); viewModel.toggleSubtaskCompletion(id, subId, done) },
+                            onSubtaskClick = { parent, sub -> selectedSubtask = parent to sub },
+                            onSubtaskDelete = { id, subId -> viewModel.deleteSubtask(id, subId) },
+                            onSubtaskUpdate = { id, sub -> viewModel.updateSubtask(id, sub) },
+                            onEditSubtaskRequest = { parent, sub -> 
+                                subtaskParentTaskToEdit = parent
+                                subtaskToEdit = sub
+                                addTaskSource = 1
+                                showAddTaskDialog = true
+                            },
+                            onTaskUpdate = { viewModel.updateTaskItem(it) }, 
+                            onPersistentTaskUpdate = { viewModel.updatePersistentTask(it) },
+                            onPersistentTaskDelete = { viewModel.deletePersistentTask(it) },
+                            onCalendarTaskDelete = { viewModel.deleteTask(it) },
+                            onDismissTaskReminder = { viewModel.removeReminderFromTask(it) },
+                            onDismissEventReminder = { viewModel.removeReminderFromEvent(it) },
+                            onCountdownClick = { selectedCountdown = it }, 
+                            onEventClick = { selectedEvent = it }, 
+                            onTaskClick = { selectedTask = it }, 
+                            onPersistentTaskClick = { selectedPersistentTask = it },
+                            onEditPersistentRequest = { taskToEditRoom = it; addTaskSource = 1; showAddTaskDialog = true },
+                            onEditItemRequest = { taskItemToEdit = it; addTaskSource = 0; showAddTaskDialog = true },
+                            calendarReminders = uiState.calendarReminders,
+                            eventReminders = uiState.eventReminders,
+                            horizontalPadding = 0.dp, 
+                            bottomPadding = bottomInset
+                        )
                 }
             }
         }
@@ -338,9 +397,14 @@ fun DashboardScreen(
             selectedDate = selectedDate, 
             showAddTaskDialog = showAddTaskDialog, 
             addTaskSource = addTaskSource, 
-            taskToEdit = taskToEdit, 
-            onDismissAddTask = { showAddTaskDialog = false; taskToEdit = null }, 
-            onUpdateTask = { viewModel.updateTask(it) }, 
+            taskToEdit = taskToEditRoom, 
+            taskItemToEdit = taskItemToEdit,
+            subtaskToEdit = subtaskToEdit,
+            subtaskParentTaskToEdit = subtaskParentTaskToEdit,
+            onDismissAddTask = { showAddTaskDialog = false; taskToEditRoom = null; taskItemToEdit = null; subtaskToEdit = null; subtaskParentTaskToEdit = null }, 
+            onUpdateTask = { viewModel.updatePersistentTask(it) }, 
+            onUpdateTaskItem = { viewModel.updateTaskItem(it) },
+            onUpdateSubtask = { parentId, updatedSub -> viewModel.updateSubtask(parentId, updatedSub) },
             viewModel = viewModel, 
             coroutineScope = coroutineScope, 
             showAddEventDialog = showAddEventDialog, 
@@ -407,41 +471,159 @@ fun DashboardScreen(
         }
 
         selectedCountdown?.let { countdown ->
+            BackHandler { selectedCountdown = null }
             var linkedInfo by remember(countdown.id) { mutableStateOf<Pair<String, TaskCategory>?>(null) }
             LaunchedEffect(countdown.linkedItemId) {
                 if (countdown.linkedItemId != null && countdown.linkedItemType != null) {
                     linkedInfo = viewModel.getLinkedItemInfo(countdown.linkedItemId, countdown.linkedItemType)
                 }
             }
-            CountdownDetailScreen(item = countdown, linkedItemInfo = linkedInfo, onDismiss = { selectedCountdown = null }, onEdit = { updated -> viewModel.updateCountdown(updated); selectedCountdown = updated }, onDelete = { viewModel.deleteCountdown(countdown); selectedCountdown = null })
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut()
+            ) {
+                CountdownDetailScreen(item = countdown, linkedItemInfo = linkedInfo, onDismiss = { selectedCountdown = null }, onEdit = { updated -> viewModel.updateCountdown(updated); selectedCountdown = updated }, onDelete = { viewModel.deleteCountdown(countdown); selectedCountdown = null })
+            }
         }
 
         selectedEvent?.let { event ->
-            EventDetailScreen(
-                event = event,
-                onDismiss = { selectedEvent = null },
-                onDelete = { 
-                    viewModel.deleteEvent(event)
-                    selectedEvent = null 
-                }
-            )
+            BackHandler { selectedEvent = null }
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut()
+            ) {
+                EventDetailScreen(
+                    event = event,
+                    onDismiss = { selectedEvent = null },
+                    onDelete = { 
+                        viewModel.deleteEvent(event)
+                        selectedEvent = null 
+                    },
+                    onUpdate = { updated ->
+                        viewModel.updateEvent(updated)
+                        selectedEvent = updated
+                    }
+                )
+            }
         }
 
         selectedTask?.let { task ->
-            val isCompleted = completedIds.contains(task.id)
-            TaskDetailScreen(
-                task = task,
-                isCompleted = isCompleted,
-                onDismiss = { selectedTask = null },
-                onToggleCompletion = { 
+            BackHandler { selectedTask = null }
+            val isCompleted = completedIds.contains(task.id) || task.done
+            if (task.isReminder) {
+                // If it's a dedicated reminder, handle clicking the row as an instant toggle completion directly!
+                LaunchedEffect(task.id) {
                     haptic()
                     viewModel.toggleCompletion(task.id, !isCompleted)
-                },
-                onDelete = {
-                    viewModel.deleteTask(task.id)
                     selectedTask = null
                 }
-            )
+            } else {
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInVertically { it } + fadeIn(),
+                    exit = slideOutVertically { it } + fadeOut()
+                ) {
+                    TaskDetailScreen(
+                        task = task,
+                        isCompleted = isCompleted,
+                        onDismiss = { selectedTask = null },
+                        onToggleCompletion = { 
+                            haptic()
+                            viewModel.toggleCompletion(task.id, !isCompleted)
+                        },
+                        onDelete = {
+                            viewModel.deleteTask(task.id)
+                            selectedTask = null
+                        },
+                        onUpdate = { updated ->
+                            viewModel.updateTaskItem(updated)
+                            selectedTask = updated
+                        }
+                    )
+                }
+            }
+        }
+
+        selectedPersistentTask?.let { task ->
+            BackHandler { selectedPersistentTask = null }
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut()
+            ) {
+                PersistentTaskDetailScreen(
+                    task = task,
+                    onDismiss = { selectedPersistentTask = null },
+                    onToggleCompletion = {
+                        haptic()
+                        viewModel.togglePersistentTaskCompletion(task.id, task.progress < 1.0f)
+                        selectedPersistentTask = null 
+                    },
+                    onEditRequest = { 
+                        taskToEditRoom = it
+                        addTaskSource = 1
+                        showAddTaskDialog = true
+                        selectedPersistentTask = null
+                    },
+                    onToggleSubtaskCompletion = { subId, done ->
+                        viewModel.toggleSubtaskCompletion(task.id, subId, done)
+                    },
+                    onAddSubtask = { title, timePref, cat, date, desc, due, reminder, duration: java.time.Duration? ->
+                        viewModel.addSubtask(task.id, title, desc, cat, due, timePref, reminder, duration)
+                    },
+                    onSubtaskClick = { sub ->
+                        selectedSubtask = task to sub
+                    },
+                    onDeleteSubtask = { subId ->
+                        viewModel.deleteSubtask(task.id, subId)
+                    },
+                    categories = viewModel.categories.collectAsState().value,
+                    onDelete = {
+                        viewModel.deletePersistentTask(task.id)
+                        selectedPersistentTask = null
+                    },
+                    onUpdate = { updated ->
+                        viewModel.updatePersistentTask(updated)
+                        selectedPersistentTask = updated
+                    }
+                )
+            }
+        }
+
+        selectedSubtask?.let { (parent, sub) ->
+            BackHandler { selectedSubtask = null }
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut()
+            ) {
+                SubtaskDetailScreen(
+                    subtask = sub,
+                    onDismiss = { selectedSubtask = null },
+                    onToggleCompletion = {
+                        haptic()
+                        viewModel.toggleSubtaskCompletion(parent.id, sub.id, !sub.isCompleted)
+                        selectedSubtask = null
+                    },
+                    onEditRequest = { 
+                        subtaskParentTaskToEdit = parent
+                        subtaskToEdit = it
+                        addTaskSource = 1
+                        showAddTaskDialog = true
+                        selectedSubtask = null
+                    },
+                    onDelete = {
+                        viewModel.deleteSubtask(parent.id, sub.id)
+                        selectedSubtask = null
+                    },
+                    onUpdate = { updatedSub: com.algo1127.mytask.ui.models.Subtask ->
+                        viewModel.updateSubtask(parent.id, updatedSub)
+                        selectedSubtask = parent to updatedSub
+                    }
+                )
+            }
         }
     }
 }
@@ -940,7 +1122,7 @@ private fun DayItem(
 }
 
 @Composable
-private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, calendarTasks: List<TaskItem>, calendarEvents: List<EventItem>, coroutineScope: kotlinx.coroutines.CoroutineScope, visible: Boolean, delayMillis: Int) {
+private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, badgeCounts: Map<Int, Int>, coroutineScope: kotlinx.coroutines.CoroutineScope, visible: Boolean, delayMillis: Int) {
     AnimatedVisibility(visible = visible, enter = fadeIn(tween(400, delayMillis = delayMillis)) + slideInVertically(spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow), initialOffsetY = { 60 })) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Theme.White06).padding(4.dp)) {
             val totalWidth = maxWidth; val itemWidth = totalWidth / 4f; val selectedIndex = pagerState.currentPage; val previousIndex = remember { mutableIntStateOf(selectedIndex) }; val movingRight = selectedIndex > previousIndex.intValue; SideEffect { previousIndex.intValue = selectedIndex }; val indicatorStart by animateDpAsState(targetValue = itemWidth * selectedIndex, animationSpec = spring(stiffness = if (movingRight) 350f else 800f, dampingRatio = 0.85f), label = "indicatorStart"); val indicatorEnd by animateDpAsState(targetValue = itemWidth * (selectedIndex + 1), animationSpec = spring(stiffness = if (movingRight) 800f else 350f, dampingRatio = 0.85f), label = "indicatorEnd"); val indicatorColor by animateColorAsState(targetValue = when (selectedIndex) { 0 -> Theme.Teal; 1 -> Theme.Purple; 2 -> Theme.Blue; else -> Theme.Gold }, animationSpec = tween(400), label = "indicatorColor")
@@ -948,7 +1130,7 @@ private fun TabBar(pagerState: androidx.compose.foundation.pager.PagerState, cal
             Row(modifier = Modifier.fillMaxWidth()) {
                 val tabs = listOf(Triple(0, Icons.Outlined.Schedule, "Reminders"), Triple(1, Icons.Default.Task, "Tasks"), Triple(2, Icons.Outlined.Event, "Events"), Triple(3, Icons.Default.HourglassEmpty, "Timers"))
                 tabs.forEach { (page, icon, label) ->
-                    val selected = selectedIndex == page; val badgeCount = when (page) { 0 -> calendarTasks.count { it.isReminder }; 1 -> calendarTasks.count { !it.isReminder }; 2 -> calendarEvents.size; else -> 0 }; val badgeColor = when (page) { 0 -> Theme.Teal; 1 -> Theme.Purple; 2 -> Theme.Blue; else -> Theme.Gold }; val tabScale by animateFloatAsState(targetValue = if (selected) 1.05f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "tabScale_$page")
+                    val selected = selectedIndex == page; val badgeCount = badgeCounts[page] ?: 0; val badgeColor = when (page) { 0 -> Theme.Teal; 1 -> Theme.Purple; 2 -> Theme.Blue; else -> Theme.Gold }; val tabScale by animateFloatAsState(targetValue = if (selected) 1.05f else 1f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "tabScale_$page")
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.weight(1f).height(48.dp).scale(tabScale).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { coroutineScope.launch { val distance = kotlin.math.abs(page - selectedIndex); if (distance == 1) pagerState.animateScrollToPage(page) else pagerState.scrollToPage(page) } }) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                             Icon(imageVector = if (selected) when(page) { 0 -> Icons.Default.Schedule; 1 -> Icons.Default.Task; 2 -> Icons.Default.Event; else -> Icons.Default.HourglassFull } else icon, contentDescription = label, tint = if (selected) Theme.BgDeep else Theme.White30, modifier = Modifier.size(18.dp))
@@ -968,28 +1150,81 @@ private fun PageContent(
     page: Int, 
     isLoading: Boolean, 
     calendarTasks: List<TaskItem>, 
+    persistentTasks: List<com.algo1127.mytask.ui.models.Task>,
     calendarEvents: List<EventItem>, 
     selectedDate: LocalDate, 
     notifAi: Any, 
     completedIds: Set<Long>, 
     countdowns: List<com.algo1127.mytask.ui.models.CountdownItem>, 
+    aiPreferences: Map<String, String>,
     onToggleCompletion: (Long, Boolean) -> Unit, 
+    onTogglePersistentCompletion: (Long, Boolean) -> Unit,
+    onToggleSubtaskCompletion: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
+    onSubtaskClick: (com.algo1127.mytask.ui.models.Task, com.algo1127.mytask.ui.models.Subtask) -> Unit = { _, _ -> },
+    onSubtaskDelete: (Long, Long) -> Unit = { _, _ -> },
+    onSubtaskUpdate: (Long, com.algo1127.mytask.ui.models.Subtask) -> Unit = { _, _ -> },
+    onEditSubtaskRequest: (com.algo1127.mytask.ui.models.Task, com.algo1127.mytask.ui.models.Subtask) -> Unit = { _, _ -> },
     onTaskUpdate: (TaskItem) -> Unit, 
+    onPersistentTaskUpdate: (com.algo1127.mytask.ui.models.Task) -> Unit,
+    onPersistentTaskDelete: (Long) -> Unit = {},
+    onCalendarTaskDelete: (Long) -> Unit = {},
+    onDismissTaskReminder: (com.algo1127.mytask.ui.models.Task) -> Unit = {},
+    onDismissEventReminder: (EventItem) -> Unit = {},
     onCountdownClick: (com.algo1127.mytask.ui.models.CountdownItem) -> Unit, 
     onEventClick: (EventItem) -> Unit,
     onTaskClick: (TaskItem) -> Unit,
-    onEditRequest: (TaskItem) -> Unit = {}, 
-    horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp
+    onPersistentTaskClick: (com.algo1127.mytask.ui.models.Task) -> Unit,
+    onEditPersistentRequest: (com.algo1127.mytask.ui.models.Task) -> Unit = {},
+    onEditItemRequest: (TaskItem) -> Unit = {},
+    calendarReminders: List<TaskItem> = emptyList(),
+    eventReminders: List<EventItem> = emptyList(),
+    horizontalPadding: androidx.compose.ui.unit.Dp = 0.dp,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     AnimatedContent(targetState = page, transitionSpec = { val stiffness = Spring.StiffnessMediumLow; if (targetState > initialState) { (slideInHorizontally(spring(stiffness = stiffness, dampingRatio = 0.8f)) { it } + fadeIn()).togetherWith(slideOutHorizontally(spring(stiffness = stiffness, dampingRatio = 0.8f)) { -it } + fadeOut()) } else { (slideInHorizontally(spring(stiffness = stiffness, dampingRatio = 0.8f)) { -it } + fadeIn()).togetherWith(slideOutHorizontally(spring(stiffness = stiffness, dampingRatio = 0.8f)) { it } + fadeOut()) }.using(SizeTransform(clip = false)) }, label = "pageTransition") { targetPage ->
         Box(Modifier.fillMaxSize().padding(horizontal = horizontalPadding)) {
             if (isLoading && false) { Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { repeat(3) { ShimmerBlock(height = 80f) } } } 
             else {
                 when (targetPage) {
-                    0 -> RemindersTab(tasks = calendarTasks, selectedDate = selectedDate, notifAi = notifAi as com.algo1127.mytask.NotifAi.NotifAi, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskClick = { /* Reminders Detail Disabled */ }, onEditRequest = onEditRequest)
-                    1 -> TasksTab(tasks = calendarTasks, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onTaskUpdate = onTaskUpdate, onTaskClick = onTaskClick, onEditRequest = onEditRequest)
-                    2 -> EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onEventClick = onEventClick)
-                    3 -> CountdownsTab(countdowns = countdowns, onClick = onCountdownClick)
+                    0 -> RemindersTab(
+                        calendarTasks = calendarReminders,
+                        persistentTasks = persistentTasks,
+                        events = eventReminders,
+                        selectedDate = selectedDate,
+                        completedIds = completedIds,
+                        onCompleteLegacyReminder = onToggleCompletion,
+                        onDismissTaskReminder = onDismissTaskReminder,
+                        onDismissEventReminder = onDismissEventReminder,
+                        onCalendarTaskClick = onTaskClick,
+                        onPersistentTaskClick = onPersistentTaskClick,
+                        onEventClick = onEventClick,
+                        bottomPadding = bottomPadding
+                    )
+                    1 -> TasksTab(
+                        persistentTasks = persistentTasks, 
+                        calendarTasks = calendarTasks,
+                        selectedDate = selectedDate, 
+                        completedIds = completedIds,
+                        aiPreferences = aiPreferences,
+                        onTogglePersistentCompletion = onTogglePersistentCompletion, 
+                        onToggleCalendarCompletion = onToggleCompletion,
+                        onToggleSubtaskCompletion = onToggleSubtaskCompletion,
+                        onPersistentTaskUpdate = onPersistentTaskUpdate, 
+                        onPersistentTaskDelete = onPersistentTaskDelete,
+                        onPersistentTaskClick = onPersistentTaskClick, 
+                        onCalendarTaskUpdate = onTaskUpdate,
+                        onCalendarTaskDelete = onCalendarTaskDelete,
+                        onCalendarTaskClick = onTaskClick,
+                        onEditPersistentRequest = onEditPersistentRequest, 
+                        onEditCalendarRequest = onEditItemRequest,
+                        onSubtaskClick = onSubtaskClick,
+                        onSubtaskDelete = onSubtaskDelete,
+                        onSubtaskUpdate = onSubtaskUpdate,
+                        onEditSubtaskRequest = onEditSubtaskRequest,
+                        bottomPadding = bottomPadding
+                    )
+                    2 -> EventsTab(events = calendarEvents, selectedDate = selectedDate, completedIds = completedIds, onToggleCompletion = onToggleCompletion, onEventClick = onEventClick, bottomPadding = bottomPadding)
+                    3 -> CountdownsTab(countdowns = countdowns, onClick = onCountdownClick, bottomPadding = bottomPadding)
                     else -> Box(modifier = Modifier.fillMaxSize())
                 }
             }

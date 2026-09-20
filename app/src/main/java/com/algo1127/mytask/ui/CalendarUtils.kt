@@ -43,6 +43,7 @@ object CalendarUtils {
                 
                 if (task.isUrgent) description += "|::|URGENT:TRUE"
                 if (task.isImportant) description += "|::|IMPORTANT:TRUE"
+                task.reminderDateTime?.let { description += "|::|REMINDER_DT:$it" }
                 put(CalendarContract.Events.DESCRIPTION, description)
 
                 put(CalendarContract.Events.HAS_ALARM, 1)
@@ -99,7 +100,8 @@ object CalendarUtils {
                 put(CalendarContract.Events.EVENT_LOCATION, event.location)
                 
                 // We use ||TYPE:EVENT to distinguish our app's events
-                val description = if (event.notes.isNotBlank()) "${event.notes}||TYPE:EVENT" else "||TYPE:EVENT"
+                var description = if (event.notes.isNotBlank()) "${event.notes}||TYPE:EVENT" else "||TYPE:EVENT"
+                event.reminderDateTime?.let { description += "||REMINDER_DT:$it" }
                 put(CalendarContract.Events.DESCRIPTION, description)
                 
                 if (rrule != null) {
@@ -136,6 +138,8 @@ object CalendarUtils {
                 
                 if (task.isUrgent) description += "|::|URGENT:TRUE"
                 if (task.isImportant) description += "|::|IMPORTANT:TRUE"
+                if (task.done) description += "|::|DONE:TRUE"
+                task.reminderDateTime?.let { description += "|::|REMINDER_DT:$it" }
                 put(CalendarContract.Events.DESCRIPTION, description)
             }
 
@@ -144,6 +148,35 @@ object CalendarUtils {
             rows > 0
         } catch (e: Exception) {
             android.util.Log.e("CalendarUtils", "Error updating task: ${e.message}")
+            false
+        }
+    }
+
+    fun updateEventInCalendar(context: Context, event: EventItem): Boolean {
+        return try {
+            val startTime = LocalTime.parse(event.startTime)
+            val endTime = LocalTime.parse(event.endTime)
+            val startDateTime = LocalDateTime.of(event.date, startTime)
+            val endDateTime = LocalDateTime.of(event.date, endTime)
+            val startMillis = startDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val endMillis = endDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+            val values = ContentValues().apply {
+                put(CalendarContract.Events.TITLE, event.title)
+                put(CalendarContract.Events.DTSTART, startMillis)
+                put(CalendarContract.Events.DTEND, endMillis)
+                put(CalendarContract.Events.EVENT_LOCATION, event.location)
+                
+                var description = if (event.notes.isNotBlank()) "${event.notes}||TYPE:EVENT" else "||TYPE:EVENT"
+                event.reminderDateTime?.let { description += "||REMINDER_DT:$it" }
+                put(CalendarContract.Events.DESCRIPTION, description)
+            }
+
+            val uri = android.content.ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.id)
+            val rows = context.contentResolver.update(uri, values, null, null)
+            rows > 0
+        } catch (e: Exception) {
+            android.util.Log.e("CalendarUtils", "Error updating event: ${e.message}")
             false
         }
     }

@@ -61,6 +61,8 @@ class CalendarReader(private val context: Context) {
                 val isReminder = description.contains("TYPE:REMINDER")
                 val isUrgent = description.contains("URGENT:TRUE")
                 val isImportant = description.contains("IMPORTANT:TRUE")
+                val isDone = description.contains("DONE:TRUE") || description.contains("||DONE:TRUE")
+                val reminderDt = extractReminderDateTime(description)
 
                 if (isTask || isReminder) {
                     val category = extractCategory(description)
@@ -77,6 +79,10 @@ class CalendarReader(private val context: Context) {
                         .replace(Regex("\\|\\|CATEGORY:.*?(\\|\\||$)"), "")
                         .replace("|::|URGENT:TRUE", "")
                         .replace("|::|IMPORTANT:TRUE", "")
+                        .replace("|::|DONE:TRUE", "")
+                        .replace("||DONE:TRUE", "")
+                        .replace("|::|REMINDER_DT:.*?(|::||$)", "")
+                        .replace("||REMINDER_DT:.*?(|||$)", "")
                         .replace("||URGENT:TRUE", "")
                         .replace("||IMPORTANT:TRUE", "")
                         .replace("TYPE:TASK", "")
@@ -93,12 +99,16 @@ class CalendarReader(private val context: Context) {
                             id = eventId,
                             isUrgent = isUrgent,
                             isImportant = isImportant,
-                            notes = cleanNotes
+                            notes = cleanNotes,
+                            reminderDateTime = reminderDt,
+                            done = isDone
                         )
                     )
                 } else {
                     // Strip the TYPE:EVENT marker from notes
-                    var cleanNotes = description.replace("||TYPE:EVENT", "").trim()
+                    var cleanNotes = description.replace("||TYPE:EVENT", "")
+                        .replace(Regex("\\|\\|REMINDER_DT:.*?(\\|\\||$)"), "")
+                        .trim()
                     var finalLocation = location
 
                     // Fallback: If location field is empty, try to extract it from the old format in notes
@@ -119,7 +129,8 @@ class CalendarReader(private val context: Context) {
                             location = finalLocation,
                             notes = cleanNotes,
                             date = itemDate,
-                            id = eventId
+                            id = eventId,
+                            reminderDateTime = reminderDt
                         )
                     )
                 }
@@ -136,6 +147,18 @@ class CalendarReader(private val context: Context) {
     // For backwards compatibility
     fun getEventsForDate(date: LocalDate): List<EventItem> {
         return getItemsForDate(date).second
+    }
+
+    private fun extractReminderDateTime(description: String): java.time.LocalDateTime? {
+        return try {
+            val dtStr = if (description.contains("|::|REMINDER_DT:")) {
+                description.substringAfter("|::|REMINDER_DT:").substringBefore("|::|").trim()
+            } else if (description.contains("||REMINDER_DT:")) {
+                description.substringAfter("||REMINDER_DT:").substringBefore("||").trim()
+            } else null
+            
+            dtStr?.let { java.time.LocalDateTime.parse(it) }
+        } catch (e: Exception) { null }
     }
 
     private fun extractCategory(description: String): TaskCategory {

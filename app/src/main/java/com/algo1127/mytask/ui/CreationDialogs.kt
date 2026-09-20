@@ -166,9 +166,14 @@ fun CreationDialogs(
     selectedDate: LocalDate,
     showAddTaskDialog: Boolean,
     addTaskSource: Int,
-    taskToEdit: TaskItem?,
+    taskToEdit: com.algo1127.mytask.ui.models.Task?,
+    taskItemToEdit: TaskItem?,
+    subtaskToEdit: com.algo1127.mytask.ui.models.Subtask? = null,
+    subtaskParentTaskToEdit: com.algo1127.mytask.ui.models.Task? = null,
     onDismissAddTask: () -> Unit,
-    onUpdateTask: (TaskItem) -> Unit,
+    onUpdateTask: (com.algo1127.mytask.ui.models.Task) -> Unit,
+    onUpdateTaskItem: (TaskItem) -> Unit,
+    onUpdateSubtask: (Long, com.algo1127.mytask.ui.models.Subtask) -> Unit = { _, _ -> },
     viewModel: DashboardViewModel,
     coroutineScope: CoroutineScope,
     showAddEventDialog: Boolean,
@@ -190,43 +195,62 @@ fun CreationDialogs(
             defaultDate = selectedDate,
             sourceTab = addTaskSource,
             taskToEdit = taskToEdit,
+            taskItemToEdit = taskItemToEdit,
+            subtaskToEdit = subtaskToEdit,
             categories = categories,
             onDismiss = onDismissAddTask,
             onEdit = { updatedTask ->
                 onUpdateTask(updatedTask)
                 onDismissAddTask()
             },
-            onAdd = { title, timePref, category, date, description, repetition ->
-                val timeString = when (timePref) {
-                    is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)
-                    TimePreference.LaterToday -> {
-                        val suggest = LocalTime.now().plusHours(2)
-                        String.format(Locale.US, "%02d:%02d", suggest.hour, suggest.minute)
-                    }
-                    TimePreference.Tomorrow -> "09:00"
-                    TimePreference.AiDecide -> "10:00"
-                    is TimePreference.Window -> String.format(Locale.US, "%02d:00", timePref.startHour)
+            onEditItem = { updatedItem ->
+                onUpdateTaskItem(updatedItem)
+                onDismissAddTask()
+            },
+            onEditSubtask = { updatedSub ->
+                subtaskParentTaskToEdit?.let { parent ->
+                    onUpdateSubtask(parent.id, updatedSub)
                 }
-
-                val task = TaskItem(
-                    title = title, 
-                    time = timeString, 
-                    category = category, 
-                    date = date, 
-                    isReminder = (addTaskSource == 0),
-                    notes = description ?: ""
-                )
-                val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
-                
-                val id = CalendarUtils.addTaskToCalendar(context, task, rrule)
-                if (id != null) {
-                    android.widget.Toast.makeText(context, "Added!", android.widget.Toast.LENGTH_SHORT).show()
+                onDismissAddTask()
+            },
+            onAdd = { title, timePref, category, date, description, repetition, dueDate, duration, reminderDt ->
+                if (addTaskSource == 1) {
+                    // Persistent Task
+                    viewModel.addPersistentTask(title, description, category, dueDate, duration, reminderDt)
                 } else {
-                    android.widget.Toast.makeText(context, "Failed: Check Calendar Sync", android.widget.Toast.LENGTH_LONG).show()
-                }
+                    // Calendar Reminder (Legacy Flow - keeping it for now but with new fields)
+                    val timeString = when (timePref) {
+                        is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)
+                        TimePreference.LaterToday -> {
+                            val suggest = LocalTime.now().plusHours(2)
+                            String.format(Locale.US, "%02d:%02d", suggest.hour, suggest.minute)
+                        }
+                        TimePreference.Tomorrow -> "09:00"
+                        TimePreference.AiDecide -> "10:00"
+                        is TimePreference.Window -> String.format(Locale.US, "%02d:00", timePref.startHour)
+                    }
 
-                try { notifAi.onTaskCreated(task) } catch (e: Exception) {
-                    android.util.Log.e("CreationDialogs", "onTaskCreated error: ${e.message}", e)
+                    val task = TaskItem(
+                        title = title, 
+                        time = timeString, 
+                        category = category, 
+                        date = date, 
+                        isReminder = true,
+                        notes = description ?: "",
+                        reminderDateTime = reminderDt
+                    )
+                    val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
+                    
+                    val id = CalendarUtils.addTaskToCalendar(context, task, rrule)
+                    if (id != null) {
+                        android.widget.Toast.makeText(context, "Added!", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        android.widget.Toast.makeText(context, "Failed: Check Calendar Sync", android.widget.Toast.LENGTH_LONG).show()
+                    }
+
+                    try { notifAi.onTaskCreated(task) } catch (e: Exception) {
+                        android.util.Log.e("CreationDialogs", "onTaskCreated error: ${e.message}", e)
+                    }
                 }
                 
                 onDismissAddTask()
@@ -242,17 +266,8 @@ fun CreationDialogs(
         AddEventDialog(
             defaultDate = selectedDate,
             onDismiss = onDismissAddEvent,
-            onAdd = { title, date, startTime, endTime, location, notes, repetition ->
-                val event = EventItem(title = title, date = date, startTime = startTime, endTime = endTime, location = location, notes = notes)
-                val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
-                
-                val id = CalendarUtils.addEventToCalendar(context, event, rrule)
-                if (id != null) {
-                    android.widget.Toast.makeText(context, "Event added!", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    android.widget.Toast.makeText(context, "Failed to add event", android.widget.Toast.LENGTH_LONG).show()
-                }
-
+            onAdd = { title, date, startTime, endTime, location, notes, repetition, reminderDt ->
+                viewModel.addEvent(title, date, startTime, endTime, location, notes, reminderDt)
                 onDismissAddEvent()
                 coroutineScope.launch {
                     kotlinx.coroutines.delay(500)
@@ -270,7 +285,9 @@ fun CreationDialogs(
             onOpenCategoryManager = onOpenCategoryManager,
             onOpenPermissions = onOpenPermissions,
             highReliabilityEnabled = prefs["high_reliability"] == "true",
-            onToggleHighReliability = { viewModel.setAiPreference("high_reliability", it.toString()) }
+            onToggleHighReliability = { viewModel.setAiPreference("high_reliability", it.toString()) },
+            aiPreferences = prefs,
+            onPreferenceChanged = { key, value -> viewModel.setAiPreference(key, value) }
         )
     }
 

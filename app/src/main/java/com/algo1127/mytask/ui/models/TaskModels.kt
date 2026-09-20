@@ -29,12 +29,20 @@ data class Task(
     val focusState: FocusState = FocusState.Active,
     val timePreference: TimePreference = TimePreference.Fixed(LocalTime.NOON),
     val verificationStatus: VerificationStatus = VerificationStatus.Pending,
+    val isReminder: Boolean = false,
+    val reminderDateTime: LocalDateTime? = null,
     val createdAt: LocalDateTime = LocalDateTime.now()
 )
 
 data class Subtask(
     val id: Long = System.nanoTime(),
     val title: String,
+    val description: String = "",
+    val category: com.algo1127.mytask.ui.TaskCategory,
+    val dueDate: LocalDate?,
+    val timePreference: TimePreference = TimePreference.Fixed(LocalTime.NOON),
+    val reminderDateTime: LocalDateTime? = null,
+    val estimatedEffort: Duration? = null,
     val isCompleted: Boolean = false
 )
 
@@ -66,7 +74,8 @@ data class EventItem(
     val location: String,
     val date: LocalDate,
     @PrimaryKey val id: Long = System.nanoTime(),
-    val notes: String = ""
+    val notes: String = "",
+    val reminderDateTime: LocalDateTime? = null
 )
 
 @Entity(tableName = "countdowns")

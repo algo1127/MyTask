@@ -29,12 +29,13 @@ import java.time.LocalDateTime
 @Composable
 fun CountdownsTab(
     countdowns: List<CountdownItem>,
-    onClick: (CountdownItem) -> Unit
+    onClick: (CountdownItem) -> Unit,
+    bottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 100.dp, top = 8.dp)
+        contentPadding = PaddingValues(bottom = 100.dp + bottomPadding, top = 8.dp)
     ) {
         if (countdowns.isEmpty()) {
             item {

@@ -16,7 +16,8 @@ data class TaskItem(
     val done: Boolean = false,
     val isUrgent: Boolean = false,
     val isImportant: Boolean = false,
-    val notes: String = ""
+    val notes: String = "",
+    val reminderDateTime: java.time.LocalDateTime? = null
 )
 
 data class EventItem(
@@ -26,7 +27,8 @@ data class EventItem(
     val location: String,
     val notes: String = "",
     val date: LocalDate,
-    val id: Long = System.nanoTime()
+    val id: Long = System.nanoTime(),
+    val reminderDateTime: java.time.LocalDateTime? = null
 )
 
 data class TaskCategory(

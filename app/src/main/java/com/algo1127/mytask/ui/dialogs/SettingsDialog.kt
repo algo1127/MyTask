@@ -26,7 +26,9 @@ fun SettingsDialog(
     onOpenCategoryManager: () -> Unit,
     onOpenPermissions: () -> Unit,
     highReliabilityEnabled: Boolean,
-    onToggleHighReliability: (Boolean) -> Unit
+    onToggleHighReliability: (Boolean) -> Unit,
+    aiPreferences: Map<String, String>,
+    onPreferenceChanged: (String, String) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -66,6 +68,24 @@ fun SettingsDialog(
 
                 HorizontalDivider(color = Theme.White06, modifier = Modifier.padding(vertical = 8.dp))
 
+                Text("Task Swipe Gestures", color = Theme.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                
+                GestureSettingItem(
+                    label = "Swipe Right",
+                    currentAction = aiPreferences["gesture_right_action"] ?: "complete",
+                    onActionSelected = { onPreferenceChanged("gesture_right_action", it) },
+                    accentColor = Theme.PastelGreen
+                )
+
+                GestureSettingItem(
+                    label = "Swipe Left",
+                    currentAction = aiPreferences["gesture_left_action"] ?: "delete",
+                    onActionSelected = { onPreferenceChanged("gesture_left_action", it) },
+                    accentColor = Color.Red
+                )
+
+                HorizontalDivider(color = Theme.White06, modifier = Modifier.padding(vertical = 8.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -97,6 +117,41 @@ fun SettingsDialog(
             }
         }
     )
+}
+
+@Composable
+private fun GestureSettingItem(
+    label: String,
+    currentAction: String,
+    onActionSelected: (String) -> Unit,
+    accentColor: Color
+) {
+    val options = listOf("complete" to "Complete", "delete" to "Delete", "edit" to "Edit", "postpone" to "Postpone")
+    
+    Column {
+        Text(label, color = Theme.White60, fontSize = 12.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (value, name) ->
+                val isSelected = currentAction == value
+                Surface(
+                    onClick = { onActionSelected(value) },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSelected) accentColor.copy(alpha = 0.2f) else Theme.White06,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        name,
+                        color = if (isSelected) accentColor else Theme.White60,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

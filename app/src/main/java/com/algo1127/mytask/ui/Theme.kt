@@ -16,6 +16,7 @@ object Theme {
     val Rose        = Color(0xFFFF7597)
     val Emerald     = Color(0xFF50FA7B)
     val Orange      = Color(0xFFFFB86C)
+    val PastelGreen = Color(0xFF50FA7B)
     val White       = Color.White
     val White80     = Color.White.copy(alpha = 0.80f)
     val White60     = Color.White.copy(alpha = 0.60f)

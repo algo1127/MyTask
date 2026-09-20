@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import com.algo1127.mytask.MyTaskApplication
 import com.algo1127.mytask.NotifAi.model.NotificationAction
+import com.algo1127.mytask.data.MyTaskDatabase
+import com.algo1127.mytask.ui.models.Task
 import kotlinx.coroutines.launch
 
 class Receiver : BroadcastReceiver() {
@@ -22,16 +24,31 @@ class Receiver : BroadcastReceiver() {
         }
 
         if (intent.action == "com.algo1127.mytask.ACTION_TRIGGER_REMINDER") {
-            android.util.Log.d("Receiver", "Reminder triggered for task $taskId")
+            val minsBefore = intent.getIntExtra("minutesBefore", 0)
+            android.util.Log.d("Receiver", "Reminder triggered for task $taskId (offset: $minsBefore)")
             val notifAi = (context.applicationContext as MyTaskApplication).notifAi
-            // To send a notification we need the full Task object.
-            // For now, we'll try to retrieve it from persistence.
-            val persistence = com.algo1127.mytask.NotifAi.persistence.Persistence(context)
+            val database = MyTaskDatabase.getDatabase(context)
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val tasks = persistence.getTasks()
-                val task = tasks.find { it.id == taskId }
+                val task = database.taskDao().getTaskById(taskId)
                 if (task != null) {
-                    notifAi.evaluateTask(task)
+                    notifAi.evaluateTask(task = task, isFromWorker = false, minutesBefore = minsBefore)
+                } else {
+                    android.util.Log.e("Receiver", "Task $taskId not found in database")
+                }
+            }
+            return
+        }
+
+        if (intent.action == "com.algo1127.mytask.ACTION_TRIGGER_EVENT_REMINDER") {
+            val eventId = intent.getLongExtra("eventId", -1)
+            val minsBefore = intent.getIntExtra("minutesBefore", 0)
+            android.util.Log.d("Receiver", "Event triggered for $eventId (offset: $minsBefore)")
+            val notifAi = (context.applicationContext as MyTaskApplication).notifAi
+            val database = MyTaskDatabase.getDatabase(context)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val event = database.eventDao().getAllEvents().find { it.id == eventId }
+                if (event != null) {
+                    notifAi.sendEventNotification(event, minsBefore)
                 }
             }
             return

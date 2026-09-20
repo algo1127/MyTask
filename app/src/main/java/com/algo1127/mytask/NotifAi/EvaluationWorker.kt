@@ -8,10 +8,17 @@ class EvaluationWorker(appContext: Context, params: WorkerParameters) : Worker(a
     override fun doWork(): Result {
         return try {
             val notifAi = (applicationContext as com.algo1127.mytask.MyTaskApplication).notifAi
+            val persistence = com.algo1127.mytask.NotifAi.persistence.Persistence(applicationContext)
+            
             android.util.Log.d("NotifAi", "Periodic evaluation triggered")
 
-            // v1: Stub - evaluate all pending tasks
-            // v2: Full evaluation with UsageAnalyzer
+            kotlinx.coroutines.runBlocking {
+                val tasks = persistence.getTasks()
+                tasks.filter { it.progress < 1.0f && it.focusState == com.algo1127.mytask.ui.models.FocusState.Active }
+                    .forEach { task ->
+                        notifAi.evaluateTask(task)
+                    }
+            }
 
             android.util.Log.d("NotifAi", "Periodic evaluation completed")
             Result.success()

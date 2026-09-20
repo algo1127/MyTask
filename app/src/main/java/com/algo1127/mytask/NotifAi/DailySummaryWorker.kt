@@ -17,10 +17,10 @@ class DailySummaryWorker(
     override suspend fun doWork(): Result {
         val tomorrow = LocalDate.now().plusDays(1)
 
-        // Pull tomorrow's events from persistence
+        // Pull tomorrow's events directly from Calendar source of truth
         val events = try {
-            Persistence(context).getEvents()
-                .filter { it.date == tomorrow }
+            val reader = com.algo1127.mytask.ui.CalendarReader(context)
+            reader.getItemsForDate(tomorrow).second
                 .sortedBy { it.startTime }
         } catch (e: Exception) { emptyList() }
 
