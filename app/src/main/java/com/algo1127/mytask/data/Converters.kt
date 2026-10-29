@@ -157,4 +157,10 @@ class Converters {
 
     @TypeConverter
     fun toTimePreference(value: String): TimePreference = gson.fromJson(value, TimePreference::class.java)
+
+    @TypeConverter
+    fun fromDayOfWeek(value: java.time.DayOfWeek?): String? = value?.name
+
+    @TypeConverter
+    fun toDayOfWeek(value: String?): java.time.DayOfWeek? = value?.let { java.time.DayOfWeek.valueOf(it) }
 }

@@ -115,3 +115,12 @@ fun SubtaskRow(
         }
     }
 }
+
+fun getActionUi(action: String?): Pair<Color, androidx.compose.ui.graphics.vector.ImageVector> {
+    return when (action) {
+        "complete" -> Theme.PastelGreen to Icons.Default.Check
+        "delete" -> Color.Red to Icons.Default.Delete
+        "edit" -> Theme.Blue to Icons.Default.Edit
+        else -> Color.Transparent to Icons.Default.QuestionMark
+    }
+}

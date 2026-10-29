@@ -336,8 +336,14 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     fun togglePersistentTaskCompletion(taskId: Long, isDone: Boolean) {
         viewModelScope.launch {
             val task = taskDao.getTaskById(taskId) ?: return@launch
-            val updatedSubtasks = task.subtasks.map { it.copy(isCompleted = isDone) }
-            updateParentTaskProgress(task, updatedSubtasks)
+            if (task.subtasks.isEmpty()) {
+                val updated = task.copy(progress = if (isDone) 1.0f else 0.0f)
+                taskDao.insertTask(updated)
+                refresh()
+            } else {
+                val updatedSubtasks = task.subtasks.map { it.copy(isCompleted = isDone) }
+                updateParentTaskProgress(task, updatedSubtasks)
+            }
         }
     }
 

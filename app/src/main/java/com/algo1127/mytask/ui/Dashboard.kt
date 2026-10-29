@@ -74,6 +74,7 @@ import com.algo1127.mytask.ui.dialogs.AddEventDialog
 import com.algo1127.mytask.ui.dialogs.AddTaskDialog
 import com.algo1127.mytask.ui.dialogs.SettingsDialog
 import com.algo1127.mytask.ui.dialogs.RepetitionInfo
+import com.algo1127.mytask.ui.timetable.TimetableScreen
 import com.algo1127.mytask.ui.models.TimePreference
 import kotlinx.coroutines.launch
 import java.time.*
@@ -210,6 +211,7 @@ fun DashboardScreen(
     var showAiKnowledge by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var showPermissions by remember { mutableStateOf(false) }
+    var showTimetableScreen by remember { mutableStateOf(false) }
 
     var isFabExpanded by remember { mutableStateOf(false) }
 
@@ -415,8 +417,15 @@ fun DashboardScreen(
             onDismissSettings = { showSettingsDialog = false },
             onOpenAiKnowledge = { showAiKnowledge = true },
             onOpenCategoryManager = { showCategoryManager = true },
-            onOpenPermissions = { showPermissions = true }
+            onOpenPermissions = { showPermissions = true },
+            onOpenTimetable = { showTimetableScreen = true }
         )
+
+        if (showTimetableScreen) {
+            TimetableScreen(
+                onBack = { showTimetableScreen = false }
+            )
+        }
 
         if (showAiKnowledge) {
             val knowledge by viewModel.aiKnowledge.collectAsState()
@@ -587,7 +596,9 @@ fun DashboardScreen(
                     onUpdate = { updated ->
                         viewModel.updatePersistentTask(updated)
                         selectedPersistentTask = updated
-                    }
+                    },
+                    leftAction = aiPreferences["gesture_left_action"] ?: "delete",
+                    rightAction = aiPreferences["gesture_right_action"] ?: "complete"
                 )
             }
         }
@@ -621,7 +632,9 @@ fun DashboardScreen(
                     onUpdate = { updatedSub: com.algo1127.mytask.ui.models.Subtask ->
                         viewModel.updateSubtask(parent.id, updatedSub)
                         selectedSubtask = parent to updatedSub
-                    }
+                    },
+                    leftAction = aiPreferences["gesture_left_action"] ?: "delete",
+                    rightAction = aiPreferences["gesture_right_action"] ?: "complete"
                 )
             }
         }

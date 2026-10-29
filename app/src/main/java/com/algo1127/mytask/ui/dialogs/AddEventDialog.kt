@@ -52,6 +52,7 @@ fun AddEventDialog(
     var hasReminder by remember { mutableStateOf(false) }
     var reminderDateTime by remember { mutableStateOf(LocalDateTime.now().plusHours(1)) }
     var showReminderOverlay by remember { mutableStateOf(false) }
+    var showTimetablePicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -61,6 +62,29 @@ fun AddEventDialog(
         title = { Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Event, null, tint = Theme.Blue, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(8.dp)); Text("Add Event", color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold) } },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                // ── Timetable Quick Import ────────────────────────────────
+                Surface(
+                    onClick = { showTimetablePicker = true },
+                    shape = RoundedCornerShape(16.dp),
+                    color = Theme.Blue.copy(alpha = 0.1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Theme.Blue.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Schedule, contentDescription = null, tint = Theme.Blue, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Import from Timetable", color = Theme.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("Select", color = Theme.Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Event title", color = Theme.White60) }, singleLine = true, colors = eventFieldColors(), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("Location (optional)", color = Theme.White60) }, singleLine = true, leadingIcon = { Icon(Icons.Default.LocationOn, null, tint = Theme.White30, modifier = Modifier.size(18.dp)) }, colors = eventFieldColors(), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
@@ -122,6 +146,20 @@ fun AddEventDialog(
                 showReminderOverlay = false
             },
             accentColor = Theme.Blue
+        )
+    }
+
+    if (showTimetablePicker) {
+        TimetableSlotPickerBottomSheet(
+            selectedDate = selectedDate,
+            onDismiss = { showTimetablePicker = false },
+            onSelectSlot = { slot ->
+                title = slot.subjectName
+                startTime = slot.startTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+                endTime = slot.endTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+                if (slot.location.isNotBlank()) location = slot.location
+                if (slot.teacher.isNotBlank()) notes = "Instructor: ${slot.teacher}"
+            }
         )
     }
 }

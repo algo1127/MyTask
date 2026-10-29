@@ -130,6 +130,8 @@ fun PersistentTaskDetailScreen(
     onEditRequest: (com.algo1127.mytask.ui.models.Task) -> Unit = {},
     onDeleteSubtask: (Long) -> Unit = {},
     categories: List<TaskCategory> = emptyList(),
+    leftAction: String = "delete",
+    rightAction: String = "complete",
     onDelete: () -> Unit,
     onUpdate: (com.algo1127.mytask.ui.models.Task) -> Unit = {}
 ) {
@@ -195,7 +197,6 @@ fun PersistentTaskDetailScreen(
                 if (showSubtaskCreator) {
                     AddTaskDialog(
                         defaultDate = task.dueDate ?: java.time.LocalDate.now(),
-                        sourceTab = 1, // Add as task
                         categories = categories,
                         onDismiss = { showSubtaskCreator = false },
                         onAdd = { title, timePref, cat, date, desc, _, due, duration, reminder ->
@@ -211,13 +212,18 @@ fun PersistentTaskDetailScreen(
                 task.subtasks.forEach { sub ->
                     val subSwipeState = rememberSwipeToDismissBoxState(
                         confirmValueChange = { value ->
-                            when (value) {
-                                SwipeToDismissBoxValue.EndToStart -> {
+                            val action = if (value == SwipeToDismissBoxValue.StartToEnd) rightAction else if (value == SwipeToDismissBoxValue.EndToStart) leftAction else null
+                            when (action) {
+                                "delete" -> {
                                     onDeleteSubtask(sub.id)
                                     true
                                 }
-                                SwipeToDismissBoxValue.StartToEnd -> {
+                                "complete" -> {
                                     onToggleSubtaskCompletion(sub.id, !sub.isCompleted)
+                                    false
+                                }
+                                "edit" -> {
+                                    onSubtaskClick(sub)
                                     false
                                 }
                                 else -> false
@@ -229,8 +235,8 @@ fun PersistentTaskDetailScreen(
                         state = subSwipeState,
                         backgroundContent = {
                             val direction = subSwipeState.dismissDirection
-                            val color = if (direction == SwipeToDismissBoxValue.StartToEnd) Theme.PastelGreen else if (direction == SwipeToDismissBoxValue.EndToStart) Color.Red else Color.Transparent
-                            val icon = if (direction == SwipeToDismissBoxValue.StartToEnd) Icons.Default.Check else Icons.Default.Delete
+                            val action = if (direction == SwipeToDismissBoxValue.StartToEnd) rightAction else if (direction == SwipeToDismissBoxValue.EndToStart) leftAction else null
+                            val (color, icon) = getActionUi(action)
                             Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(color), contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) { Icon(icon, null, tint = Theme.BgDeep, modifier = Modifier.padding(horizontal = 16.dp)) }
                         },
                         content = {
@@ -265,6 +271,11 @@ fun PersistentTaskDetailScreen(
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     DetailRow(icon = Icons.Default.CalendarToday, label = "Created on", value = task.createdAt.format(DateTimeFormatter.ofPattern("EEEE, MMM d")))
                     DetailRow(icon = Icons.Default.Event, label = "Due Date", value = task.dueDate?.format(DateTimeFormatter.ofPattern("EEEE, MMM d")) ?: "No due date")
+                    DetailRow(
+                        icon = Icons.Default.Timer, 
+                        label = "Est. Duration", 
+                        value = task.estimatedEffort?.let { "${it.toMinutes()}m" } ?: "Not set"
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(40.dp))
@@ -278,6 +289,8 @@ fun SubtaskDetailScreen(
     onDismiss: () -> Unit,
     onToggleCompletion: () -> Unit,
     onEditRequest: (com.algo1127.mytask.ui.models.Subtask) -> Unit = {},
+    leftAction: String = "delete",
+    rightAction: String = "complete",
     onDelete: () -> Unit,
     onUpdate: (com.algo1127.mytask.ui.models.Subtask) -> Unit = {}
 ) {

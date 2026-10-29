@@ -34,9 +34,7 @@ import java.util.Locale
 @Composable
 fun AddTaskDialog(
     defaultDate: LocalDate,
-    sourceTab: Int = 1,          // 0 = Reminders (teal), 1 = Tasks (purple)
     taskToEdit: com.algo1127.mytask.ui.models.Task? = null,
-    taskItemToEdit: TaskItem? = null,
     subtaskToEdit: com.algo1127.mytask.ui.models.Subtask? = null,
     categories: List<TaskCategory> = TaskCategory.values(),
     onDismiss: () -> Unit,
@@ -52,28 +50,27 @@ fun AddTaskDialog(
         reminderDateTime: LocalDateTime?
     ) -> Unit,
     onEdit: ((com.algo1127.mytask.ui.models.Task) -> Unit)? = null,
-    onEditItem: ((TaskItem) -> Unit)? = null,
     onEditSubtask: ((com.algo1127.mytask.ui.models.Subtask) -> Unit)? = null
 ) {
-    val accentColor  = if (sourceTab == 0) Theme.Teal else Theme.Purple
-    val isEditMode   = taskToEdit != null || taskItemToEdit != null || subtaskToEdit != null
-    val dialogTitle  = if (isEditMode) "Edit ${if (sourceTab == 0) "Reminder" else "Task"}" else if (sourceTab == 0) "Add Reminder" else "Add Task"
+    val accentColor  = Theme.Purple
+    val isEditMode   = taskToEdit != null || subtaskToEdit != null
+    val dialogTitle  = if (isEditMode) "Edit Task" else "Add Task"
 
     val context = LocalContext.current
     val notifAi = remember { NotifAi(context) }
 
-    var title            by remember { mutableStateOf(taskToEdit?.title ?: taskItemToEdit?.title ?: subtaskToEdit?.title ?: "") }
-    var description      by remember { mutableStateOf(taskToEdit?.description ?: taskItemToEdit?.notes ?: subtaskToEdit?.description ?: "") }
-    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: taskItemToEdit?.category ?: subtaskToEdit?.category ?: categories.firstOrNull() ?: TaskCategory.Study) }
-    var selectedDate     by remember { mutableStateOf(taskToEdit?.startDate ?: taskItemToEdit?.date ?: subtaskToEdit?.dueDate ?: defaultDate) }
+    var title            by remember { mutableStateOf(taskToEdit?.title ?: subtaskToEdit?.title ?: "") }
+    var description      by remember { mutableStateOf(taskToEdit?.description ?: subtaskToEdit?.description ?: "") }
+    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: subtaskToEdit?.category ?: categories.firstOrNull() ?: TaskCategory.Study) }
+    var selectedDate     by remember { mutableStateOf(taskToEdit?.startDate ?: subtaskToEdit?.dueDate ?: defaultDate) }
     
     var hasDueDate       by remember { mutableStateOf(taskToEdit?.dueDate != null || subtaskToEdit?.dueDate != null) }
     var dueDate          by remember { mutableStateOf(taskToEdit?.dueDate ?: subtaskToEdit?.dueDate ?: defaultDate) }
     var estimatedMinutes by remember { mutableStateOf(taskToEdit?.estimatedEffort?.toMinutes()?.toString() ?: subtaskToEdit?.estimatedEffort?.toMinutes()?.toString() ?: "") }
 
     // Reminder state
-    var hasReminder      by remember { mutableStateOf(taskToEdit?.reminderDateTime != null || taskItemToEdit?.reminderDateTime != null || subtaskToEdit?.reminderDateTime != null) }
-    var reminderDateTime by remember { mutableStateOf(taskToEdit?.reminderDateTime ?: taskItemToEdit?.reminderDateTime ?: subtaskToEdit?.reminderDateTime ?: LocalDateTime.now().plusHours(1)) }
+    var hasReminder      by remember { mutableStateOf(taskToEdit?.reminderDateTime != null || subtaskToEdit?.reminderDateTime != null) }
+    var reminderDateTime by remember { mutableStateOf(taskToEdit?.reminderDateTime ?: subtaskToEdit?.reminderDateTime ?: LocalDateTime.now().plusHours(1)) }
     var showReminderOverlay by remember { mutableStateOf(false) }
 
     // Quick Category state
@@ -81,13 +78,13 @@ fun AddTaskDialog(
 
     var timePreference   by remember { 
         mutableStateOf<TimePreference>(
-            taskToEdit?.timePreference ?: subtaskToEdit?.timePreference ?: taskItemToEdit?.let { 
-                try { TimePreference.Fixed(LocalTime.parse(it.time)) } catch(_: Exception) { TimePreference.LaterToday }
-            } ?: TimePreference.LaterToday
+            taskToEdit?.timePreference ?: subtaskToEdit?.timePreference ?: TimePreference.LaterToday
         ) 
     }
     var selectedRepetition by remember { mutableStateOf<RepetitionInfo?>(null) }
-    var fixedTime        by remember { mutableStateOf(taskItemToEdit?.time ?: "14:30") }
+    var fixedTime        by remember { mutableStateOf("14:30") }
+
+    var showTimetablePicker by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -96,13 +93,36 @@ fun AddTaskDialog(
         modifier = Modifier.padding(1.dp).background(Brush.linearGradient(listOf(accentColor.copy(alpha = 0.08f), Color.Transparent)), RoundedCornerShape(22.dp)).padding(1.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (sourceTab == 0) Icons.Outlined.Schedule else Icons.Default.Task, null, tint = accentColor, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.Task, null, tint = accentColor, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(dialogTitle, color = Theme.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                // ── Timetable Quick Import ────────────────────────────────
+                Surface(
+                    onClick = { showTimetablePicker = true },
+                    shape = RoundedCornerShape(16.dp),
+                    color = accentColor.copy(alpha = 0.1f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Schedule, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Import from Timetable", color = Theme.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("Select", color = accentColor, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
                 OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title", color = Theme.White60) }, singleLine = true, colors = textFieldColors(accentColor), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description (optional)", color = Theme.White60) }, colors = textFieldColors(accentColor), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
@@ -141,36 +161,28 @@ fun AddTaskDialog(
                 }
                 Spacer(Modifier.height(16.dp))
 
-                // ── Date (Reminders Tab Only) ──────────────────────────────
-                if (sourceTab == 0) {
-                    DateSelector(selectedDate = selectedDate, onDateSelected = { selectedDate = it }, accentColor = accentColor)
+                // ── Task Specifics ──────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = hasDueDate, onCheckedChange = { hasDueDate = it }, colors = CheckboxDefaults.colors(checkedColor = accentColor))
+                    Text("Has Due Date", color = Theme.White60, fontSize = 13.sp)
+                }
+                if (hasDueDate) {
+                    DateSelector(selectedDate = dueDate, onDateSelected = { dueDate = it }, accentColor = accentColor)
                     Spacer(Modifier.height(12.dp))
                 }
-
-                // ── Task Specifics ──────────────────
-                if (sourceTab == 1) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = hasDueDate, onCheckedChange = { hasDueDate = it }, colors = CheckboxDefaults.colors(checkedColor = accentColor))
-                        Text("Has Due Date", color = Theme.White60, fontSize = 13.sp)
-                    }
-                    if (hasDueDate) {
-                        DateSelector(selectedDate = dueDate, onDateSelected = { dueDate = it }, accentColor = accentColor)
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    Text("Est. Duration", color = Theme.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("15m" to "15", "30m" to "30", "1h" to "60", "2h" to "120", "4h" to "240").forEach { (label, value) ->
-                            val isSel = estimatedMinutes == value
-                            Surface(onClick = { estimatedMinutes = if (isSel) "" else value }, shape = RoundedCornerShape(10.dp), color = if (isSel) accentColor.copy(alpha = 0.2f) else Theme.White06, modifier = Modifier.weight(1f)) {
-                                Text(label, color = if (isSel) accentColor else Theme.White60, fontSize = 12.sp, fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(vertical = 8.dp), textAlign = TextAlign.Center)
-                            }
+                Text("Est. Duration", color = Theme.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("15m" to "15", "30m" to "30", "1h" to "60", "2h" to "120", "4h" to "240").forEach { (label, value) ->
+                        val isSel = estimatedMinutes == value
+                        Surface(onClick = { estimatedMinutes = if (isSel) "" else value }, shape = RoundedCornerShape(10.dp), color = if (isSel) accentColor.copy(alpha = 0.2f) else Theme.White06, modifier = Modifier.weight(1f)) {
+                            Text(label, color = if (isSel) accentColor else Theme.White60, fontSize = 12.sp, fontWeight = if (isSel) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(vertical = 8.dp), textAlign = TextAlign.Center)
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = estimatedMinutes, onValueChange = { if (it.all { c -> c.isDigit() }) estimatedMinutes = it }, label = { Text("Custom minutes", color = Theme.White30, fontSize = 11.sp) }, singleLine = true, colors = textFieldColors(accentColor), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), trailingIcon = { if (estimatedMinutes.isNotEmpty()) Text("min", color = accentColor, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp)) })
-                    Spacer(Modifier.height(12.dp))
                 }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = estimatedMinutes, onValueChange = { if (it.all { c -> c.isDigit() }) estimatedMinutes = it }, label = { Text("Custom minutes", color = Theme.White30, fontSize = 11.sp) }, singleLine = true, colors = textFieldColors(accentColor), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), trailingIcon = { if (estimatedMinutes.isNotEmpty()) Text("min", color = accentColor, fontSize = 12.sp, modifier = Modifier.padding(end = 12.dp)) })
+                Spacer(Modifier.height(12.dp))
             }
         },
         confirmButton = {
@@ -180,8 +192,6 @@ fun AddTaskDialog(
                     val finalReminder = if (hasReminder) reminderDateTime else null
                     if (taskToEdit != null && onEdit != null) {
                         onEdit(taskToEdit.copy(title = title.trim(), description = description, category = selectedCategory, dueDate = if (hasDueDate) dueDate else null, estimatedEffort = duration, reminderDateTime = finalReminder, timePreference = timePreference))
-                    } else if (taskItemToEdit != null && onEditItem != null) {
-                        onEditItem(taskItemToEdit.copy(title = title.trim(), time = fixedTime, category = selectedCategory, date = selectedDate, reminderDateTime = finalReminder))
                     } else if (subtaskToEdit != null && onEditSubtask != null) {
                         onEditSubtask(subtaskToEdit.copy(title = title.trim(), description = description, category = selectedCategory, dueDate = if (hasDueDate) dueDate else null, estimatedEffort = duration, reminderDateTime = finalReminder, timePreference = timePreference))
                     } else {
@@ -223,6 +233,19 @@ fun AddTaskDialog(
                 showReminderOverlay = false
             },
             accentColor = accentColor
+        )
+    }
+
+    if (showTimetablePicker) {
+        TimetableSlotPickerBottomSheet(
+            selectedDate = selectedDate,
+            onDismiss = { showTimetablePicker = false },
+            onSelectSlot = { slot ->
+                if (title.isBlank()) title = slot.subjectName
+                selectedCategory = slot.category
+                timePreference = TimePreference.Fixed(slot.startTime)
+                fixedTime = slot.startTime.format(DateTimeFormatter.ofPattern("HH:mm"))
+            }
         )
     }
 }

@@ -35,6 +35,7 @@ import com.algo1127.mytask.MyTaskApplication
 import com.algo1127.mytask.ui.dialogs.AddCountdownDialog
 import com.algo1127.mytask.ui.dialogs.AddEventDialog
 import com.algo1127.mytask.ui.dialogs.AddTaskDialog
+import com.algo1127.mytask.ui.dialogs.AddReminderDialog
 import com.algo1127.mytask.ui.dialogs.RepetitionInfo
 import com.algo1127.mytask.ui.models.TimePreference
 import kotlinx.coroutines.CoroutineScope
@@ -184,41 +185,24 @@ fun CreationDialogs(
     onDismissSettings: () -> Unit,
     onOpenAiKnowledge: () -> Unit,
     onOpenCategoryManager: () -> Unit,
-    onOpenPermissions: () -> Unit
+    onOpenPermissions: () -> Unit,
+    onOpenTimetable: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val notifAi = (context.applicationContext as MyTaskApplication).notifAi
 
     if (showAddTaskDialog) {
-        val categories by viewModel.categories.collectAsState()
-        AddTaskDialog(
-            defaultDate = selectedDate,
-            sourceTab = addTaskSource,
-            taskToEdit = taskToEdit,
-            taskItemToEdit = taskItemToEdit,
-            subtaskToEdit = subtaskToEdit,
-            categories = categories,
-            onDismiss = onDismissAddTask,
-            onEdit = { updatedTask ->
-                onUpdateTask(updatedTask)
-                onDismissAddTask()
-            },
-            onEditItem = { updatedItem ->
-                onUpdateTaskItem(updatedItem)
-                onDismissAddTask()
-            },
-            onEditSubtask = { updatedSub ->
-                subtaskParentTaskToEdit?.let { parent ->
-                    onUpdateSubtask(parent.id, updatedSub)
-                }
-                onDismissAddTask()
-            },
-            onAdd = { title, timePref, category, date, description, repetition, dueDate, duration, reminderDt ->
-                if (addTaskSource == 1) {
-                    // Persistent Task
-                    viewModel.addPersistentTask(title, description, category, dueDate, duration, reminderDt)
-                } else {
-                    // Calendar Reminder (Legacy Flow - keeping it for now but with new fields)
+        if (addTaskSource == 0) {
+            // Reminder Dialog (Legacy UI with TimePreference chips & batch add)
+            AddReminderDialog(
+                defaultDate = selectedDate,
+                taskToEdit = taskItemToEdit,
+                onDismiss = onDismissAddTask,
+                onEdit = { updatedItem ->
+                    onUpdateTaskItem(updatedItem)
+                    onDismissAddTask()
+                },
+                onAdd = { title, timePref, category, date, description, repetition ->
                     val timeString = when (timePref) {
                         is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)
                         TimePreference.LaterToday -> {
@@ -236,8 +220,7 @@ fun CreationDialogs(
                         category = category, 
                         date = date, 
                         isReminder = true,
-                        notes = description ?: "",
-                        reminderDateTime = reminderDt
+                        notes = description ?: ""
                     )
                     val rrule = repetition?.let { CalendarUtils.generateRRule(it.frequency, it.untilDate, it.interval, it.selectedDays) }
                     
@@ -248,18 +231,42 @@ fun CreationDialogs(
                         android.widget.Toast.makeText(context, "Failed: Check Calendar Sync", android.widget.Toast.LENGTH_LONG).show()
                     }
 
-                    try { notifAi.onTaskCreated(task) } catch (e: Exception) {
-                        android.util.Log.e("CreationDialogs", "onTaskCreated error: ${e.message}", e)
+                    onDismissAddTask()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(500)
+                        viewModel.refresh()
                     }
                 }
-                
-                onDismissAddTask()
-                coroutineScope.launch {
-                    kotlinx.coroutines.delay(500)
-                    viewModel.refresh()
+            )
+        } else {
+            // Task Dialog
+            val categories by viewModel.categories.collectAsState()
+            AddTaskDialog(
+                defaultDate = selectedDate,
+                taskToEdit = taskToEdit,
+                subtaskToEdit = subtaskToEdit,
+                categories = categories,
+                onDismiss = onDismissAddTask,
+                onEdit = { updatedTask ->
+                    onUpdateTask(updatedTask)
+                    onDismissAddTask()
+                },
+                onEditSubtask = { updatedSub ->
+                    subtaskParentTaskToEdit?.let { parent ->
+                        onUpdateSubtask(parent.id, updatedSub)
+                    }
+                    onDismissAddTask()
+                },
+                onAdd = { title, timePref, category, date, description, repetition, dueDate, duration, reminderDt ->
+                    viewModel.addPersistentTask(title, description, category, dueDate, duration, reminderDt)
+                    onDismissAddTask()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(500)
+                        viewModel.refresh()
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 
     if (showAddEventDialog) {
@@ -284,6 +291,7 @@ fun CreationDialogs(
             onOpenAiKnowledge = onOpenAiKnowledge,
             onOpenCategoryManager = onOpenCategoryManager,
             onOpenPermissions = onOpenPermissions,
+            onOpenTimetable = onOpenTimetable,
             highReliabilityEnabled = prefs["high_reliability"] == "true",
             onToggleHighReliability = { viewModel.setAiPreference("high_reliability", it.toString()) },
             aiPreferences = prefs,

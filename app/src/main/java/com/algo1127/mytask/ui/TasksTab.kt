@@ -91,6 +91,10 @@ fun TasksTab(
                 
                 val leftAction = aiPreferences["gesture_left_action"] ?: "delete"
                 val rightAction = aiPreferences["gesture_right_action"] ?: "complete"
+                
+                // Wrap actions in updated state to prevent lambda capture of stale values!
+                val currentLeftAction by rememberUpdatedState(leftAction)
+                val currentRightAction by rememberUpdatedState(rightAction)
 
                 val swipeState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
@@ -101,18 +105,19 @@ fun TasksTab(
                         when (value) {
                             SwipeToDismissBoxValue.EndToStart -> {
                                 when (viewItem) {
-                                    is TaskViewItem.Persistent -> handlePersistentGesture(leftAction, viewItem.task, onTogglePersistentCompletion, onPersistentTaskDelete, onEditPersistentRequest, onPersistentTaskUpdate)
-                                    is TaskViewItem.Calendar -> handleCalendarGesture(leftAction, viewItem.task, onToggleCalendarCompletion, onCalendarTaskDelete, onEditCalendarRequest, onCalendarTaskUpdate)
+                                    is TaskViewItem.Persistent -> handlePersistentGesture(currentLeftAction, viewItem.task, onTogglePersistentCompletion, onPersistentTaskDelete, onEditPersistentRequest, onPersistentTaskUpdate)
+                                    is TaskViewItem.Calendar -> handleCalendarGesture(currentLeftAction, viewItem.task, onToggleCalendarCompletion, onCalendarTaskDelete, onEditCalendarRequest, onCalendarTaskUpdate)
                                 }
-                                val shouldDismiss = leftAction == "delete"
+                                val shouldDismiss = currentLeftAction == "delete"
                                 shouldDismiss
                             }
                             SwipeToDismissBoxValue.StartToEnd -> {
                                 when (viewItem) {
-                                    is TaskViewItem.Persistent -> handlePersistentGesture(rightAction, viewItem.task, onTogglePersistentCompletion, onPersistentTaskDelete, onEditPersistentRequest, onPersistentTaskUpdate)
-                                    is TaskViewItem.Calendar -> handleCalendarGesture(rightAction, viewItem.task, onToggleCalendarCompletion, onCalendarTaskDelete, onEditCalendarRequest, onCalendarTaskUpdate)
+                                    is TaskViewItem.Persistent -> handlePersistentGesture(currentRightAction, viewItem.task, onTogglePersistentCompletion, onPersistentTaskDelete, onEditPersistentRequest, onPersistentTaskUpdate)
+                                    is TaskViewItem.Calendar -> handleCalendarGesture(currentRightAction, viewItem.task, onToggleCalendarCompletion, onCalendarTaskDelete, onEditCalendarRequest, onCalendarTaskUpdate)
                                 }
-                                false
+                                val shouldDismiss = currentRightAction == "delete"
+                                shouldDismiss
                             }
                             else -> false
                         }
@@ -177,6 +182,8 @@ fun TasksTab(
                                     onEditSubtaskRequest(viewItem.task, sub)
                                 }
                             },
+                            leftAction = leftAction,
+                            rightAction = rightAction,
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -241,17 +248,6 @@ private fun handleCalendarGesture(
 
 
 
-@Composable
-private fun getActionUi(action: String?): Pair<Color, androidx.compose.ui.graphics.vector.ImageVector> {
-    return when (action) {
-        "complete" -> Theme.PastelGreen to Icons.Default.Check
-        "delete" -> Color.Red to Icons.Default.Delete
-        "edit" -> Theme.Blue to Icons.Default.Edit
-        "postpone" -> Theme.Gold to Icons.Default.Schedule
-        else -> Color.Transparent to Icons.Default.QuestionMark
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TaskRow(
@@ -269,6 +265,8 @@ private fun TaskRow(
     onSubtaskClick: (com.algo1127.mytask.ui.models.Subtask) -> Unit = {},
     onSubtaskDelete: (Long) -> Unit = {},
     onSubtaskLongClick: (com.algo1127.mytask.ui.models.Subtask) -> Unit = {},
+    leftAction: String = "delete",
+    rightAction: String = "complete",
     modifier: Modifier = Modifier
 ) {
     var isTapped by remember { mutableStateOf(false) }
@@ -343,15 +341,23 @@ private fun TaskRow(
             AnimatedVisibility(visible = isExpanded && subtasks.isNotEmpty()) {
                 Column(modifier = Modifier.padding(start = 24.dp, end = 16.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     subtasks.forEach { sub ->
+                        val currentLeftAction by rememberUpdatedState(leftAction)
+                        val currentRightAction by rememberUpdatedState(rightAction)
+                        
                         val subSwipeState = rememberSwipeToDismissBoxState(
                             confirmValueChange = { value ->
-                                when (value) {
-                                    SwipeToDismissBoxValue.EndToStart -> {
+                                val action = if (value == SwipeToDismissBoxValue.StartToEnd) currentRightAction else if (value == SwipeToDismissBoxValue.EndToStart) currentLeftAction else null
+                                when (action) {
+                                    "delete" -> {
                                         onSubtaskDelete(sub.id)
                                         true
                                     }
-                                    SwipeToDismissBoxValue.StartToEnd -> {
+                                    "complete" -> {
                                         onToggleSubtask(sub.id, !sub.isCompleted)
+                                        false
+                                    }
+                                    "edit" -> {
+                                        onSubtaskClick(sub)
                                         false
                                     }
                                     else -> false
@@ -363,8 +369,8 @@ private fun TaskRow(
                             state = subSwipeState,
                             backgroundContent = {
                                 val direction = subSwipeState.dismissDirection
-                                val color = if (direction == SwipeToDismissBoxValue.StartToEnd) Theme.PastelGreen else if (direction == SwipeToDismissBoxValue.EndToStart) Color.Red else Color.Transparent
-                                val icon = if (direction == SwipeToDismissBoxValue.StartToEnd) Icons.Default.Check else Icons.Default.Delete
+                                val action = if (direction == SwipeToDismissBoxValue.StartToEnd) rightAction else if (direction == SwipeToDismissBoxValue.EndToStart) leftAction else null
+                                val (color, icon) = getActionUi(action)
                                 Box(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(color), contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd) { Icon(icon, null, tint = Theme.BgDeep, modifier = Modifier.padding(horizontal = 12.dp)) }
                             },
                             content = {
