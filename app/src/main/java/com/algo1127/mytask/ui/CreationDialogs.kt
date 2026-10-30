@@ -202,6 +202,12 @@ fun CreationDialogs(
                     onUpdateTaskItem(updatedItem)
                     onDismissAddTask()
                 },
+                onDelete = taskItemToEdit?.let { item ->
+                    {
+                        viewModel.deleteTask(item.id)
+                        onDismissAddTask()
+                    }
+                },
                 onAdd = { title, timePref, category, date, description, repetition ->
                     val timeString = when (timePref) {
                         is TimePreference.Fixed -> String.format(Locale.US, "%02d:%02d", timePref.time.hour, timePref.time.minute)

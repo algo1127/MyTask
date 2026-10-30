@@ -1,6 +1,7 @@
 package com.algo1127.mytask.ui
 
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import com.algo1127.mytask.NotifAi.PermissionManager
 
 @Composable
 fun PermissionsScreen(onDismiss: () -> Unit) {
+    BackHandler(onBack = onDismiss)
     val context = LocalContext.current
     var refreshTrigger by remember { mutableIntStateOf(0) }
 

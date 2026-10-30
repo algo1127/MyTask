@@ -44,6 +44,8 @@ fun RemindersTab(
     onCalendarTaskClick: (TaskItem) -> Unit,
     onPersistentTaskClick: (com.algo1127.mytask.ui.models.Task) -> Unit,
     onEventClick: (EventItem) -> Unit,
+    onEditReminderRequest: (TaskItem) -> Unit = {},
+    onEditPersistentRequest: (com.algo1127.mytask.ui.models.Task) -> Unit = {},
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp
 ) {
     val allReminders = remember(calendarTasks, persistentTasks, events, selectedDate) {
@@ -101,6 +103,13 @@ fun RemindersTab(
                         when(item) {
                             is ReminderViewItem.CalendarTask -> onCalendarTaskClick(item.task)
                             is ReminderViewItem.PersistentTask -> onPersistentTaskClick(item.task)
+                            is ReminderViewItem.Event -> onEventClick(item.event)
+                        }
+                    },
+                    onLongClick = {
+                        when(item) {
+                            is ReminderViewItem.CalendarTask -> onEditReminderRequest(item.task)
+                            is ReminderViewItem.PersistentTask -> onEditPersistentRequest(item.task)
                             is ReminderViewItem.Event -> onEventClick(item.event)
                         }
                     },
@@ -162,6 +171,7 @@ private fun ReminderRow(
     isCompleted: Boolean,
     onToggle: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isTapped by remember { mutableStateOf(false) }
@@ -182,7 +192,8 @@ private fun ReminderRow(
             .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { isTapped = true; onClick() }
+                onClick = { isTapped = true; onClick() },
+                onLongClick = { isTapped = true; onLongClick() }
             ),
         shape = RoundedCornerShape(18.dp),
         color = Color.Transparent

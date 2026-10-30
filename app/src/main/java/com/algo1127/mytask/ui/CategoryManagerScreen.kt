@@ -1,5 +1,6 @@
 package com.algo1127.mytask.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -32,6 +33,7 @@ fun CategoryManagerScreen(
     onReorder: (List<TaskCategory>) -> Unit,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
     var showEditor by remember { mutableStateOf(false) }
     var categoryToEdit by remember { mutableStateOf<TaskCategory?>(null) }
 

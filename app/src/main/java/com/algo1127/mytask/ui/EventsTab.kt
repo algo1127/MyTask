@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.algo1127.mytask.data.TimetableRepository
+import com.algo1127.mytask.ui.EventItem
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -94,7 +95,7 @@ fun EventsTab(
             sameDaySlots.forEach { slot ->
                 val notesText = listOfNotNull(
                     slot.teacher.ifBlank { null }?.let { "Instructor: $it" },
-                    "Recurring Timetable Class"
+                    "Timetable Class"
                 ).joinToString("\n")
 
                 list.add(
@@ -113,7 +114,7 @@ fun EventsTab(
             prevDayCarryOverSlots.forEach { slot ->
                 val notesText = listOfNotNull(
                     slot.teacher.ifBlank { null }?.let { "Instructor: $it" },
-                    "Recurring Timetable Class (Cont. from yesterday)"
+                    "Timetable Class (Cont. from yesterday)"
                 ).joinToString("\n")
 
                 list.add(
@@ -178,6 +179,35 @@ fun EventsTab(
                     modifier = Modifier.animateItem()
                 )
             }
+            // Final destination dot / end-cap for the timeline
+            item(key = "timeline_end_dot") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.TopCenter,
+                        modifier = Modifier
+                            .width(48.dp)
+                            .fillMaxHeight()
+                    ) {
+                        Box(
+                            Modifier
+                                .width(2.dp)
+                                .height(16.dp)
+                                .background(Theme.White10)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 16.dp)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Theme.White30.copy(alpha = 0.5f))
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -191,11 +221,10 @@ private fun MetroEventRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isTimetableEvent = event.id < 0
     val hasDetails = event.location.isNotBlank() || event.notes.isNotBlank()
-    val canMarkDone = status == EventStatus.PAST || isTimetableEvent
+    val canMarkDone = status == EventStatus.PAST || status == EventStatus.ACTIVE
 
-    val accentColor = if (isTimetableEvent) Theme.Teal else Theme.Blue
+    val accentColor = Theme.Blue
 
     val dotColor by animateColorAsState(
         targetValue = when {
@@ -214,21 +243,18 @@ private fun MetroEventRow(
     
     val badgeBg = when {
         isCompleted -> Theme.Teal.copy(alpha = 0.18f)
-        isTimetableEvent -> Theme.Teal.copy(alpha = 0.18f)
         status == EventStatus.PAST -> Theme.White06
         status == EventStatus.ACTIVE -> Theme.Blue.copy(alpha = 0.18f)
         else -> Theme.White06
     }
     val badgeText = when {
         isCompleted -> "Done"
-        isTimetableEvent -> "Timetable"
         status == EventStatus.PAST -> "Past"
         status == EventStatus.ACTIVE -> "Now"
         else -> ""
     }
     val badgeColor = when {
         isCompleted -> Theme.Teal
-        isTimetableEvent -> Theme.Teal
         status == EventStatus.PAST -> Theme.White30
         status == EventStatus.ACTIVE -> Theme.Blue
         else -> Theme.White30
@@ -279,9 +305,9 @@ private fun MetroEventRow(
         ) {
             Text(
                 text = "${event.startTime} – ${event.endTime}",
-                color = if (status == EventStatus.ACTIVE || isTimetableEvent) accentColor else Theme.White30,
+                color = if (status == EventStatus.ACTIVE) accentColor else Theme.White30,
                 fontSize = 11.sp,
-                fontWeight = if (status == EventStatus.ACTIVE || isTimetableEvent) FontWeight.SemiBold else FontWeight.Normal,
+                fontWeight = if (status == EventStatus.ACTIVE) FontWeight.SemiBold else FontWeight.Normal,
                 modifier = Modifier.padding(bottom = 5.dp, start = 2.dp)
             )
 
@@ -289,7 +315,6 @@ private fun MetroEventRow(
                 onClick = onClick,
                 shape = RoundedCornerShape(16.dp),
                 color = Theme.CardBg,
-                border = if (isTimetableEvent) androidx.compose.foundation.BorderStroke(1.dp, Theme.Teal.copy(alpha = 0.25f)) else null,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Box(

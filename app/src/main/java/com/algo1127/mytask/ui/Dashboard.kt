@@ -13,7 +13,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -326,7 +329,13 @@ fun DashboardScreen(
         } else {
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().offset { IntOffset(0, headerOffsetHeightPx.toInt()) }.onGloballyPositioned { headerHeightPx = it.size.height.toFloat() }.background(Brush.verticalGradient(colors = listOf(Theme.BgDeep, Theme.BgMid), startY = 0f, endY = headerHeightPx + 200f)).padding(horizontal = hPad).windowInsetsPadding(WindowInsets.statusBars).padding(top = 16.dp)
+                    modifier = Modifier.fillMaxWidth().offset { IntOffset(0, headerOffsetHeightPx.toInt()) }.onGloballyPositioned { headerHeightPx = it.size.height.toFloat() }.background(Brush.verticalGradient(colors = listOf(Theme.BgDeep, Theme.BgMid), startY = 0f, endY = headerHeightPx + 200f)).padding(horizontal = hPad).windowInsetsPadding(WindowInsets.statusBars).padding(top = 16.dp).draggable(
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            val newOffset = headerOffsetHeightPx + delta
+                            headerOffsetHeightPx = newOffset.coerceIn(-headerHeightPx, 0f)
+                        }
+                    )
                 ) {
                     DashboardHeader(today = today, visible = visible, onSettingsClick = { showSettingsDialog = true })
                     ProgressCard(isLoading = isLoading, visible = visible, totalTasks = calendarTasks.size, completedCount = completedCount, progress = progress, countdowns = activeCountdowns, isShowingCountdowns = isShowingCountdowns, onToggle = { isShowingCountdowns = !isShowingCountdowns }, onCountdownClick = { selectedCountdown = it }, delayMillis = 100)
@@ -478,6 +487,13 @@ fun DashboardScreen(
                 DatePicker(state = dpState, colors = DatePickerDefaults.colors(containerColor = Theme.CardBg, titleContentColor = Theme.White, headlineContentColor = Theme.Teal, selectedDayContainerColor = Theme.Teal, selectedDayContentColor = Theme.BgDeep, todayContentColor = Theme.Teal, todayDateBorderColor = Theme.Teal))
             }
         }
+
+        BackHandler(enabled = isFabExpanded) { isFabExpanded = false }
+        BackHandler(enabled = showTimetableScreen) { showTimetableScreen = false }
+        BackHandler(enabled = showAiKnowledge) { showAiKnowledge = false }
+        BackHandler(enabled = showCategoryManager) { showCategoryManager = false }
+        BackHandler(enabled = showPermissions) { showPermissions = false }
+        BackHandler(enabled = showJumpToDateDialog) { showJumpToDateDialog = false }
 
         selectedCountdown?.let { countdown ->
             BackHandler { selectedCountdown = null }
@@ -1211,6 +1227,8 @@ private fun PageContent(
                         onCalendarTaskClick = onTaskClick,
                         onPersistentTaskClick = onPersistentTaskClick,
                         onEventClick = onEventClick,
+                        onEditReminderRequest = onEditItemRequest,
+                        onEditPersistentRequest = onEditPersistentRequest,
                         bottomPadding = bottomPadding
                     )
                     1 -> TasksTab(

@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,8 +29,6 @@ import com.algo1127.mytask.ui.models.TimePreference
 import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
-// ─── Public entry point ───────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,19 +44,17 @@ fun AddReminderDialog(
         description: String?,
         repetition: RepetitionInfo?
     ) -> Unit,
-    onEdit: ((TaskItem) -> Unit)? = null
+    onEdit: ((TaskItem) -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
-    val accentColor  = Theme.Teal
-    val isEditMode   = taskToEdit != null
-    val dialogTitle  = if (isEditMode) "Edit Reminder" else "Add Reminder"
-    val dialogIcon: ImageVector = Icons.Outlined.Schedule
+    val accentColor = Theme.Teal
+    val isEditMode  = taskToEdit != null
+    val dialogTitle = if (isEditMode) "Edit Reminder" else "Add Reminder"
 
     val context = LocalContext.current
     val notifAi = remember { NotifAi(context) }
 
     var title            by remember { mutableStateOf(taskToEdit?.title ?: "") }
-    var description      by remember { mutableStateOf(taskToEdit?.notes ?: "") }
-    var selectedCategory by remember { mutableStateOf(taskToEdit?.category ?: TaskCategory.Study) }
     var selectedDate     by remember { mutableStateOf(taskToEdit?.date ?: defaultDate) }
     var timePreference   by remember { 
         mutableStateOf<TimePreference>(
@@ -72,7 +67,9 @@ fun AddReminderDialog(
     var fixedTime        by remember { mutableStateOf(taskToEdit?.time ?: "14:30") }
     var timeError        by remember { mutableStateOf<String?>(null) }
     var showBatchAdd     by remember { mutableStateOf(false) }
-    val itemsToAdd       = remember { mutableStateListOf<QueuedItem>() }
+    val itemsToAdd       = remember { mutableStateListOf<QueuedReminderItem>() }
+
+    val defaultCategory  = taskToEdit?.category ?: TaskCategory.Personal
 
     fun updateFixedTime(time: LocalTime) {
         val hStr = String.format(Locale.US, "%02d", time.hour)
@@ -84,24 +81,24 @@ fun AddReminderDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor   = Theme.CardBg,
-        shape            = RoundedCornerShape(22.dp),
+        shape            = RoundedCornerShape(26.dp),
         modifier = Modifier
             .padding(1.dp)
             .background(
                 Brush.linearGradient(
-                    colors = listOf(accentColor.copy(alpha = 0.08f), Color.Transparent)
+                    colors = listOf(accentColor.copy(alpha = 0.12f), Color.Transparent)
                 ),
-                RoundedCornerShape(22.dp)
+                RoundedCornerShape(26.dp)
             )
             .padding(1.dp),
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(dialogIcon, null, tint = accentColor, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Outlined.Schedule, null, tint = accentColor, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(10.dp))
                 Text(
-                    dialogTitle,
-                    color      = Theme.White,
-                    fontSize   = 18.sp,
+                    text = dialogTitle,
+                    color = Theme.White,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -110,46 +107,78 @@ fun AddReminderDialog(
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
-                    .padding(vertical = 8.dp)
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // ── Title ──────────────────────────────────────────────────
                 OutlinedTextField(
                     value         = title,
                     onValueChange = { title = it },
-                    label         = { Text("Title", color = Theme.White60) },
+                    label         = { Text("What do you want to be reminded of?", color = Theme.White60) },
                     singleLine    = true,
-                    colors        = textFieldColors(accentColor),
-                    modifier      = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                    shape         = RoundedCornerShape(16.dp),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = accentColor,
+                        unfocusedBorderColor = Theme.White10,
+                        focusedLabelColor    = accentColor,
+                        unfocusedLabelColor  = Theme.White30,
+                        cursorColor          = accentColor,
+                        focusedTextColor     = Theme.White,
+                        unfocusedTextColor   = Theme.White,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(12.dp))
-
-                // ── Description ────────────────────────────────────────────
-                OutlinedTextField(
-                    value         = description,
-                    onValueChange = { description = it },
-                    label         = { Text("Description (optional)", color = Theme.White60) },
-                    colors        = textFieldColors(accentColor),
-                    modifier      = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
-                    minLines      = 2,
-                    maxLines      = 4
-                )
-                Spacer(Modifier.height(12.dp))
-
-                // ── Category ───────────────────────────────────────────────
-                CategorySelector(
-                    selected    = selectedCategory,
-                    onSelected  = { selectedCategory = it },
-                    accentColor = accentColor
-                )
-                Spacer(Modifier.height(12.dp))
 
                 // ── Date ───────────────────────────────────────────────────
-                DateSelector(
+                ReminderDateSelector(
                     selectedDate   = selectedDate,
                     onDateSelected = { selectedDate = it },
                     accentColor    = accentColor
                 )
-                Spacer(Modifier.height(12.dp))
+
+                // ── Time Preference ("When?") ──────────────────────────────
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "When?",
+                        color      = Theme.White,
+                        fontSize   = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    ReminderTimePreferenceSelector(
+                        selected         = timePreference,
+                        onSelected       = { 
+                            timePreference = it
+                            when (it) {
+                                TimePreference.LaterToday -> {
+                                    selectedDate = LocalDate.now()
+                                    updateFixedTime(notifAi.resolveLaterToday(defaultCategory))
+                                }
+                                TimePreference.Tomorrow -> {
+                                    selectedDate = LocalDate.now().plusDays(1)
+                                    updateFixedTime(notifAi.resolveTomorrow(defaultCategory))
+                                }
+                                is TimePreference.Fixed -> {
+                                    updateFixedTime(it.time)
+                                }
+                                else -> {}
+                            }
+                        },
+                        fixedTime        = fixedTime,
+                        onTimeChanged    = {
+                            fixedTime = it
+                            timeError = validateTime(it)
+                            try {
+                                timePreference = TimePreference.Fixed(LocalTime.parse(it))
+                            } catch (_: Exception) {}
+                        },
+                        accentColor      = accentColor,
+                        selectedCategory = defaultCategory,
+                        notifAi          = notifAi,
+                        onDateUpdate     = { selectedDate = it }
+                    )
+                }
 
                 // ── Repetition ─────────────────────────────────────────────
                 if (!isEditMode) {
@@ -157,53 +186,10 @@ fun AddReminderDialog(
                         onRepetitionChanged = { selectedRepetition = it },
                         accentColor = accentColor
                     )
-                    Spacer(Modifier.height(12.dp))
                 }
 
-                // ── Time preference ────────────────────────────────────────
-                Text(
-                    "When?",
-                    color      = Theme.White,
-                    fontSize   = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(8.dp))
-                TimePreferenceSelector(
-                    selected         = timePreference,
-                    onSelected       = { 
-                        timePreference = it
-                        when (it) {
-                            TimePreference.LaterToday -> {
-                                selectedDate = LocalDate.now()
-                                updateFixedTime(notifAi.resolveLaterToday(selectedCategory))
-                            }
-                            TimePreference.Tomorrow -> {
-                                selectedDate = LocalDate.now().plusDays(1)
-                                updateFixedTime(notifAi.resolveTomorrow(selectedCategory))
-                            }
-                            is TimePreference.Fixed -> {
-                                updateFixedTime(it.time)
-                            }
-                            else -> {}
-                        }
-                    },
-                    fixedTime        = fixedTime,
-                    onTimeChanged    = {
-                        fixedTime  = it
-                        timeError  = validateTime(it)
-                        try {
-                            timePreference = TimePreference.Fixed(LocalTime.parse(it))
-                        } catch (_: Exception) {}
-                    },
-                    accentColor      = accentColor,
-                    selectedCategory = selectedCategory,
-                    notifAi          = notifAi,
-                    onDateUpdate     = { selectedDate = it }
-                )
-
-                // ── Batch toggle ───────────────────────────────────────────
+                // ── Batch Toggle & Queue ───────────────────────────────────
                 if (!isEditMode) {
-                    Spacer(Modifier.height(16.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier          = Modifier.clickable { showBatchAdd = !showBatchAdd }
@@ -217,14 +203,12 @@ fun AddReminderDialog(
                     }
                 }
 
-                // ── Batch preview ──────────────────────────────────────────
                 AnimatedVisibility(visible = showBatchAdd && itemsToAdd.isNotEmpty()) {
-                    Column {
-                        Spacer(Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Reminders to add:", color = Theme.White30, fontSize = 12.sp)
                         for (item in itemsToAdd) {
                             Row(
-                                modifier            = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                modifier              = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("• ${item.title}", color = Theme.White80, fontSize = 13.sp)
@@ -236,197 +220,136 @@ fun AddReminderDialog(
             }
         },
         confirmButton = {
-            Row {
-                if (showBatchAdd) {
-                    TextButton(
-                        onClick = {
-                            if (title != "" &&
-                                (timePreference !is TimePreference.Fixed || (timeError == null))
-                            ) {
-                                itemsToAdd.add(
-                                    QueuedItem(
-                                        title          = title.trim(),
-                                        timePreference = timePreference,
-                                        category       = selectedCategory,
-                                        date           = selectedDate,
-                                        description    = description.ifBlank { null },
-                                        timeLabel      = getTimeLabel(timePreference, fixedTime),
-                                        repetition     = selectedRepetition
-                                    )
-                                )
-                                title          = ""
-                                description    = ""
-                                timePreference = TimePreference.LaterToday
-                            }
-                        },
-                        enabled = title != ""
-                    ) {
-                        Text(
-                            "Add to Batch",
-                            color      = accentColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isEditMode && onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("Delete", color = Color.Red.copy(alpha = 0.8f), fontWeight = FontWeight.Bold)
                     }
-                    Spacer(Modifier.width(8.dp))
+                } else {
+                    Spacer(Modifier.width(1.dp))
                 }
 
-                TextButton(
-                    onClick = {
-                        if (isEditMode && taskToEdit != null && onEdit != null) {
-                            onEdit(
-                                taskToEdit.copy(
-                                    title = title.trim(),
-                                    time = fixedTime,
-                                    category = selectedCategory,
-                                    date = selectedDate,
-                                    notes = description
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (showBatchAdd && !isEditMode) {
+                        TextButton(
+                            onClick = {
+                                if (title.isNotBlank() && (timePreference !is TimePreference.Fixed || timeError == null)) {
+                                    itemsToAdd.add(
+                                        QueuedReminderItem(
+                                            title          = title.trim(),
+                                            timePreference = timePreference,
+                                            date           = selectedDate,
+                                            timeLabel      = getTimeLabel(timePreference, fixedTime),
+                                            repetition     = selectedRepetition
+                                        )
+                                    )
+                                    title          = ""
+                                    timePreference = TimePreference.LaterToday
+                                }
+                            },
+                            enabled = title.isNotBlank()
+                        ) {
+                            Text("Add to Batch", color = accentColor, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            if (isEditMode && taskToEdit != null && onEdit != null) {
+                                onEdit(
+                                    taskToEdit.copy(
+                                        title = title.trim(),
+                                        time = fixedTime,
+                                        date = selectedDate
+                                    )
                                 )
-                            )
-                        } else if (showBatchAdd && itemsToAdd.isNotEmpty()) {
-                            for (item in itemsToAdd) {
+                            } else if (showBatchAdd && itemsToAdd.isNotEmpty()) {
+                                for (item in itemsToAdd) {
+                                    onAdd(
+                                        item.title,
+                                        item.timePreference,
+                                        defaultCategory,
+                                        item.date,
+                                        null,
+                                        item.repetition
+                                    )
+                                }
+                                itemsToAdd.clear()
+                            } else if (title.isNotBlank() && (timePreference !is TimePreference.Fixed || timeError == null)) {
                                 onAdd(
-                                    item.title,
-                                    item.timePreference,
-                                    item.category,
-                                    item.date,
-                                    item.description,
-                                    item.repetition
+                                    title.trim(),
+                                    timePreference,
+                                    defaultCategory,
+                                    selectedDate,
+                                    null,
+                                    selectedRepetition
                                 )
                             }
-                            itemsToAdd.clear()
-                        } else if (title != "" &&
-                            (timePreference !is TimePreference.Fixed || timeError == null)
-                        ) {
-                            onAdd(
-                                title.trim(),
-                                timePreference,
-                                selectedCategory,
-                                selectedDate,
-                                description.ifBlank { null },
-                                selectedRepetition
-                            )
-                        }
-                        onDismiss()
-                    },
-                    enabled = if (showBatchAdd) itemsToAdd.isNotEmpty()
-                    else ((title != "") &&
-                            (timePreference !is TimePreference.Fixed || (timeError == null)))
-                ) {
-                    Text(
-                        if (isEditMode) "Save" else if (showBatchAdd) "Add All" else "Add",
-                        color      = accentColor,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                            onDismiss()
+                        },
+                        enabled = if (showBatchAdd) itemsToAdd.isNotEmpty()
+                        else (title.isNotBlank() && (timePreference !is TimePreference.Fixed || timeError == null))
+                    ) {
+                        Text(
+                            text = if (isEditMode) "Save" else if (showBatchAdd) "Add All" else "Add",
+                            color = accentColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", color = Theme.White60)
+                    }
                 }
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Theme.White60)
-            }
-        }
+        dismissButton = {}
     )
 }
 
-// ─── Text field colours ───────────────────────────────────────────────────────
-
-@Composable
-private fun textFieldColors(accentColor: Color) = OutlinedTextFieldDefaults.colors(
-    focusedBorderColor   = accentColor,
-    unfocusedBorderColor = Theme.White10,
-    focusedLabelColor    = accentColor,
-    unfocusedLabelColor  = Theme.White30,
-    cursorColor          = accentColor,
-    focusedTextColor     = Theme.White,
-    unfocusedTextColor   = Theme.White
-)
-
-// ─── Category selector ────────────────────────────────────────────────────────
+// ─── Date Selector ────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CategorySelector(
-    selected:    TaskCategory,
-    onSelected:  (TaskCategory) -> Unit,
-    accentColor: Color
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded        = expanded,
-        onExpandedChange = { expanded = !expanded }
-    ) {
-        OutlinedTextField(
-            value         = selected.label,
-            onValueChange = {},
-            readOnly      = true,
-            label         = { Text("Category", color = Theme.White60) },
-            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            colors        = textFieldColors(accentColor),
-            modifier      = Modifier
-                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-        )
-        ExposedDropdownMenu(
-            expanded          = expanded,
-            onDismissRequest  = { expanded = false },
-            containerColor    = Theme.BgSurface,
-            shape             = RoundedCornerShape(14.dp)
-        ) {
-            for (cat in TaskCategory.values()) {
-                DropdownMenuItem(
-                    text    = { Text(cat.label, color = Theme.White80, fontSize = 14.sp) },
-                    onClick = { onSelected(cat); expanded = false },
-                    colors  = MenuDefaults.itemColors(textColor = Theme.White80)
-                )
-            }
-        }
-    }
-}
-
-// ─── Date selector ────────────────────────────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DateSelector(
-    selectedDate:   LocalDate,
+private fun ReminderDateSelector(
+    selectedDate: LocalDate,
     onDateSelected: (LocalDate) -> Unit,
-    accentColor:    Color
+    accentColor: Color
 ) {
     var showQuickPicker  by remember { mutableStateOf(false) }
     var showManualPicker by remember { mutableStateOf(false) }
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Theme.White06)
-            .clickable { showQuickPicker = true }
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+    Surface(
+        onClick = { showQuickPicker = true },
+        color   = Theme.White06,
+        shape   = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Icon(
-            Icons.Default.CalendarToday, null,
-            tint     = Theme.White60,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(Modifier.width(10.dp))
-        Column {
-            Text("Date", color = Theme.White30, fontSize = 11.sp)
-            Text(
-                selectedDate.format(DateTimeFormatter.ofPattern("EEE, MMM d")),
-                color      = Theme.White,
-                fontSize   = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+        Row(
+            modifier          = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.CalendarToday, null, tint = Theme.White60, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("Date", color = Theme.White30, fontSize = 11.sp)
+                Text(
+                    selectedDate.format(DateTimeFormatter.ofPattern("EEE, MMM d, yyyy")),
+                    color      = Theme.White,
+                    fontSize   = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Icon(Icons.Default.ArrowDropDown, null, tint = Theme.White30, modifier = Modifier.size(18.dp))
         }
-        Spacer(Modifier.weight(1f))
-        Icon(
-            Icons.Default.ArrowDropDown, null,
-            tint     = Theme.White30,
-            modifier = Modifier.size(18.dp)
-        )
     }
 
     if (showQuickPicker) {
@@ -434,7 +357,7 @@ private fun DateSelector(
             onDismissRequest = { showQuickPicker = false },
             containerColor   = Theme.CardBg,
             shape            = RoundedCornerShape(18.dp),
-            title = { Text("Select Date", color = Theme.White) },
+            title = { Text("Select Date", color = Theme.White, fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     Text("Quick select:", color = Theme.White60, fontSize = 13.sp)
@@ -446,8 +369,7 @@ private fun DateSelector(
                             Surface(
                                 onClick = { onDateSelected(date); showQuickPicker = false },
                                 shape   = RoundedCornerShape(10.dp),
-                                color   = if (date == selectedDate) accentColor.copy(alpha = 0.2f)
-                                else Theme.White06
+                                color   = if (date == selectedDate) accentColor.copy(alpha = 0.2f) else Theme.White06
                             ) {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -483,24 +405,11 @@ private fun DateSelector(
                             }
                             .padding(horizontal = 14.dp, vertical = 11.dp)
                     ) {
-                        Icon(
-                            Icons.Default.EditCalendar, null,
-                            tint     = accentColor,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.EditCalendar, null, tint = accentColor, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
-                        Text(
-                            "Pick a custom date…",
-                            color      = accentColor,
-                            fontSize   = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text("Pick a custom date…", color = accentColor, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.weight(1f))
-                        Icon(
-                            Icons.Default.ChevronRight, null,
-                            tint     = accentColor.copy(alpha = 0.6f),
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.ChevronRight, null, tint = accentColor.copy(alpha = 0.6f), modifier = Modifier.size(18.dp))
                     }
                 }
             },
@@ -566,11 +475,11 @@ private fun DateSelector(
     }
 }
 
-// ─── Time preference selector ─────────────────────────────────────────────────
+// ─── Time Preference Selector ─────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TimePreferenceSelector(
+private fun ReminderTimePreferenceSelector(
     selected:         TimePreference,
     onSelected:       (TimePreference) -> Unit,
     fixedTime:        String,
@@ -633,7 +542,7 @@ private fun TimePreferenceSelector(
                         }
                     }
                 },
-                shape    = RoundedCornerShape(10.dp),
+                shape    = RoundedCornerShape(12.dp),
                 color    = if (isSelected) accentColor.copy(alpha = 0.2f) else Theme.White06,
                 modifier = Modifier.weight(1f)
             ) {
@@ -641,8 +550,8 @@ private fun TimePreferenceSelector(
                     label,
                     color      = if (isSelected) accentColor else Theme.White60,
                     fontSize   = 12.sp,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    modifier   = Modifier.padding(vertical = 8.dp),
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    modifier   = Modifier.padding(vertical = 10.dp),
                     textAlign  = TextAlign.Center
                 )
             }
@@ -651,31 +560,24 @@ private fun TimePreferenceSelector(
 
     if (selected is TimePreference.Fixed) {
         Spacer(Modifier.height(8.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Theme.White06)
-                .clickable { showTimePicker = true }
-                .padding(horizontal = 14.dp, vertical = 12.dp)
+        Surface(
+            onClick = { showTimePicker = true },
+            color   = Theme.White06,
+            shape   = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Icon(
-                Icons.Outlined.Schedule, null,
-                tint     = accentColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(10.dp))
-            val hStr = if (initHour < 10) "0$initHour" else initHour.toString()
-            val mStr = if (initMinute < 10) "0$initMinute" else initMinute.toString()
-            Text(
-                "$hStr:$mStr",
-                color      = Theme.White,
-                fontSize   = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.weight(1f))
-            Text("tap to change", color = Theme.White30, fontSize = 11.sp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier          = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Icon(Icons.Outlined.Schedule, null, tint = accentColor, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(10.dp))
+                val hStr = if (initHour < 10) "0$initHour" else initHour.toString()
+                val mStr = if (initMinute < 10) "0$initMinute" else initMinute.toString()
+                Text("$hStr:$mStr", color = Theme.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text("tap to change", color = Theme.White30, fontSize = 11.sp)
+            }
         }
     }
 
@@ -689,17 +591,11 @@ private fun TimePreferenceSelector(
             onDismissRequest = { showTimePicker = false },
             containerColor   = Theme.CardBg,
             shape            = RoundedCornerShape(18.dp),
-            title = {
-                Text(
-                    "Select Time",
-                    color      = Theme.White,
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
+            title = { Text("Select Time", color = Theme.White, fontWeight = FontWeight.SemiBold) },
             text = {
                 Box(
-                    modifier            = Modifier.fillMaxWidth(),
-                    contentAlignment    = Alignment.Center
+                    modifier         = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
                 ) {
                     TimePicker(
                         state  = timePickerState,
@@ -724,13 +620,8 @@ private fun TimePreferenceSelector(
                     val mVal = timePickerState.minute
                     val hStr = if (hVal < 10) "0$hVal" else hVal.toString()
                     val mStr = if (mVal < 10) "0$mVal" else mVal.toString()
-                    val newTime = "$hStr:$mStr"
-                    onTimeChanged(newTime)
-                    onSelected(
-                        TimePreference.Fixed(
-                            LocalTime.of(timePickerState.hour, timePickerState.minute)
-                        )
-                    )
+                    onTimeChanged("$hStr:$mStr")
+                    onSelected(TimePreference.Fixed(LocalTime.of(hVal, mVal)))
                     showTimePicker = false
                 }) {
                     Text("OK", color = accentColor, fontWeight = FontWeight.SemiBold)
@@ -745,7 +636,7 @@ private fun TimePreferenceSelector(
     }
 }
 
-// ─── Helpers ────────────────────────────────────────────────________________──
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 private fun getTimeLabel(pref: TimePreference, fixedTime: String): String = when (pref) {
     is TimePreference.Fixed    -> fixedTime
@@ -762,12 +653,10 @@ private fun validateTime(time: String): String? {
     } catch (_: Exception) { "Invalid" }
 }
 
-private data class QueuedItem(
+private data class QueuedReminderItem(
     val title:          String,
     val timePreference: TimePreference,
-    val category:       TaskCategory,
     val date:           LocalDate,
-    val description:    String?,
     val timeLabel:      String,
     val repetition:     RepetitionInfo? = null
 )

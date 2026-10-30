@@ -1,5 +1,6 @@
 package com.algo1127.mytask.ui.timetable
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -52,6 +53,7 @@ enum class TimetableDisplayMode {
 fun TimetableScreen(
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val repository = remember { TimetableRepository.getInstance(context) }
     val scope = rememberCoroutineScope()

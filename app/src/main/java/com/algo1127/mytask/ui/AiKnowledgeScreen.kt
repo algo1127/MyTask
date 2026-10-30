@@ -1,5 +1,6 @@
 package com.algo1127.mytask.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -30,6 +31,7 @@ fun AiKnowledgeScreen(
     knowledge: AiKnowledge,
     onDismiss: () -> Unit
 ) {
+    BackHandler(onBack = onDismiss)
     val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize().background(Theme.BgDeep)) {
         // Shifting background glow

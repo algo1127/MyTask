@@ -14,13 +14,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.algo1127.mytask.ui.Theme
 import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.format.TextStyle
-import java.util.*
 
 data class RepetitionInfo(
     val frequency: String,
@@ -29,7 +28,6 @@ data class RepetitionInfo(
     val untilDate: LocalDate? = null
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RepeatingSelector(
     onRepetitionChanged: (RepetitionInfo?) -> Unit,
@@ -38,7 +36,6 @@ fun RepeatingSelector(
     var isRepeating by remember { mutableStateOf(false) }
     var frequency by remember { mutableStateOf("Daily") }
     var interval by remember { mutableStateOf(1) }
-    var showCustomOptions by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -50,7 +47,7 @@ fun RepeatingSelector(
                     if (!isRepeating) onRepetitionChanged(null)
                     else onRepetitionChanged(RepetitionInfo(frequency, interval))
                 }
-                .padding(vertical = 8.dp)
+                .padding(vertical = 4.dp)
         ) {
             Icon(
                 Icons.Default.Repeat, null,
@@ -62,7 +59,7 @@ fun RepeatingSelector(
                 "Repeat",
                 color = if (isRepeating) Theme.White else Theme.White30,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.SemiBold
             )
             Spacer(Modifier.weight(1f))
             Switch(
@@ -82,10 +79,15 @@ fun RepeatingSelector(
         }
 
         AnimatedVisibility(visible = isRepeating) {
-            Column(modifier = Modifier.padding(start = 30.dp, bottom = 10.dp)) {
-                // Frequency Chips
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Frequency Chips - Equal weights, maxLines = 1 to prevent text squishing/wrapping
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     listOf("Daily", "Weekly", "Monthly", "Yearly").forEach { freq ->
@@ -95,25 +97,30 @@ fun RepeatingSelector(
                                 frequency = freq
                                 onRepetitionChanged(RepetitionInfo(frequency, interval))
                             },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (selected) accentColor.copy(alpha = 0.2f) else Theme.White06
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (selected) accentColor.copy(alpha = 0.2f) else Theme.White06,
+                            modifier = Modifier.weight(1f)
                         ) {
                             Text(
-                                freq,
+                                text = freq,
                                 color = if (selected) accentColor else Theme.White60,
                                 fontSize = 12.sp,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 8.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(Modifier.height(12.dp))
-
-                // Custom Interval
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Custom Interval Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 2.dp)
+                ) {
                     Text("Every", color = Theme.White60, fontSize = 13.sp)
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
@@ -127,15 +134,16 @@ fun RepeatingSelector(
                     ) {
                         Text(interval.toString(), color = Theme.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        when (frequency) {
+                        text = when (frequency) {
                             "Daily" -> if (interval == 1) "day" else "days"
                             "Weekly" -> if (interval == 1) "week" else "weeks"
                             "Monthly" -> if (interval == 1) "month" else "months"
                             else -> if (interval == 1) "year" else "years"
                         },
-                        color = Theme.White60, fontSize = 13.sp
+                        color = Theme.White60,
+                        fontSize = 13.sp
                     )
                 }
             }
